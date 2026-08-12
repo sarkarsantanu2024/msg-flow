@@ -2,7 +2,7 @@
 
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
-import { prisma, recordAudit, sha256 } from '@msgflow/db';
+import { prisma, recordAudit, sha256, type Prisma } from '@msgflow/db';
 import { createLogger, describeError } from '@msgflow/logger';
 import { forgotPasswordSchema, resetPasswordSchema, signupSchema } from '@msgflow/validation';
 import { fieldErrors } from '@msgflow/validation';
@@ -66,7 +66,7 @@ export async function signupAction(formData: FormData): Promise<ActionResult> {
     // otherwise nobody can reach /admin without a manual database edit.
     const isFirstUser = (await prisma.user.count()) === 0;
 
-    const { tenantId, userId } = await prisma.$transaction(async (tx) => {
+    const { tenantId, userId } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const user = await tx.user.create({
         data: { name, email, passwordHash, isSuperAdmin: isFirstUser, emailVerifiedAt: new Date() },
       });
