@@ -1,0 +1,34 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+
+.env
+.env.local
+.env.*.local
+!.env.example
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+# Prisma
+packages/db/generated/
+
+# WhatsApp session data (never commit — contains auth credentials)
+.wwebjs_auth/
+.wwebjs_cache/
+apps/worker/.sessions/
+
+# Local object storage (uploaded/generated output files)
+storage/
+apps/web/storage/
+
+coverage/
+.vitest/
+*.tsbuildinfo
+.vercel/

@@ -1,0 +1,31 @@
+{
+  "name": "@msgflow/connectors",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"[connectors] no lint targets\""
+  },
+  "dependencies": {
+    "@msgflow/config": "workspace:*",
+    "@msgflow/db": "workspace:*",
+    "@msgflow/logger": "workspace:*",
+    "@msgflow/types": "workspace:*",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.16.0",
+    "pptxgenjs": "^3.12.0",
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pdfkit": "^0.13.9",
+    "typescript": "^5.7.3"
+  }
+}

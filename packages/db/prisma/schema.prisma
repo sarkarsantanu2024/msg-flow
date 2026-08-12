@@ -1,0 +1,1438 @@
+// ============================================================================
+// MsgFlow — database schema
+// Turn Messages Into Business Data.
+//
+//   WhatsApp → Message DB → AI → Structured Records → Automation → Output Sync
+//              (truth)             (truth)                          (projections)
+//
+// PostgreSQL is the source of truth. Excel / Sheets / client APIs are
+// synchronization TARGETS, never the primary store.
+//
+// Every tenant-owned table carries `tenantId` as the leading index column.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// IDENTITY, TENANCY & BILLING
+// ============================================================================
+
+enum Role {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  /// Platform-level super admin (access to /admin), distinct from tenant Role.
+  isSuperAdmin Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  lastLoginAt  DateTime?
+  image        String?
+
+  resetToken        String?   @unique
+  resetTokenExpires DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   Membership[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@index([email])
+}
+
+model Tenant {
+  id     String       @id @default(cuid())
+  name   String
+  slug   String       @unique
+  status TenantStatus @default(TRIAL)
+
+  /// IANA timezone — drives every schedule, processing window and date filter.
+  timezone String @default("Asia/Kolkata")
+  settings Json   @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships       Membership[]
+  subscription      Subscription?
+  usages            Usage[]
+  connections       WhatsAppConnection[]
+  groups            WhatsAppGroup[]
+  messages          Message[]
+  extractionSchemas ExtractionSchema[]
+  automations       Automation[]
+  records           ExtractedRecord[]
+  outputs           Output[]
+  outputTargets     OutputTarget[]
+  workflowRuns      WorkflowRun[]
+  integrations      Integration[]
+  exports           Export[]
+  auditLogs         AuditLog[]
+  aiUsages          AIUsage[]
+  apiKeys           ApiKey[]
+  notifications     Notification[]
+  healthChecks      HealthCheck[]
+
+  @@index([status])
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+  role     Role   @default(VIEWER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model Plan {
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  priceInr Int     @default(0)
+  interval String  @default("month")
+  isActive Boolean @default(true)
+
+  /// { messagesPerMonth, aiCallsPerMonth, automations, outputs, seats }
+  limits   Json @default("{}")
+  features Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+model Subscription {
+  id       String             @id @default(cuid())
+  tenantId String             @unique
+  planId   String
+  status   SubscriptionStatus @default(TRIALING)
+
+  currentPeriodStart DateTime  @default(now())
+  currentPeriodEnd   DateTime
+  cancelAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+}
+
+/// Rolled-up metering, one row per tenant per day (spec Phase 17).
+model Usage {
+  id          String   @id @default(cuid())
+  tenantId    String
+  /// Local-midnight boundary of the usage day, in the tenant's timezone.
+  periodStart DateTime
+
+  messages        Int     @default(0)
+  aiCalls         Int     @default(0)
+  inputTokens     Int     @default(0)
+  outputTokens    Int     @default(0)
+  costUsd         Decimal @default(0) @db.Decimal(12, 6)
+  automationRuns  Int     @default(0)
+  workflowRuns    Int     @default(0)
+  recordsCreated  Int     @default(0)
+  recordsUpdated  Int     @default(0)
+  exports         Int     @default(0)
+  apiCalls        Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodStart])
+  @@index([tenantId, periodStart])
+}
+
+// ============================================================================
+// WHATSAPP CONNECTION & GROUPS
+// ============================================================================
+
+/// Provider-independent by design. whatsapp-web.js today; the official
+/// WhatsApp Business Platform plugs in behind the same MessageProvider interface.
+enum MessageProviderType {
+  WHATSAPP_WEB
+  WHATSAPP_CLOUD
+  DEMO
+}
+
+enum ConnectionStatus {
+  DISCONNECTED
+  QR_REQUIRED
+  CONNECTING
+  AUTHENTICATED
+  READY
+  RECONNECTING
+  ERROR
+  LOGGED_OUT
+}
+
+model WhatsAppConnection {
+  id       String              @id @default(cuid())
+  tenantId String
+  name     String
+  provider MessageProviderType @default(WHATSAPP_WEB)
+  status   ConnectionStatus    @default(DISCONNECTED)
+
+  phoneNumber String?
+  displayName String?
+
+  connectedAt     DateTime?
+  disconnectedAt  DateTime?
+  lastHeartbeatAt DateTime?
+  lastMessageAt   DateTime?
+
+  /// Opaque pointer to the session blob held by the worker. Never the blob
+  /// itself, and never sent to the browser.
+  sessionRef String?
+
+  /// Transient QR payload for the connect flow. Cleared once authenticated.
+  qrCode      String?
+  qrExpiresAt DateTime?
+
+  workerId         String?
+  lastErrorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  worker Worker? @relation(fields: [workerId], references: [id], onDelete: SetNull)
+
+  groups   WhatsAppGroup[]
+  messages Message[]
+  events   ConnectionEvent[]
+
+  @@index([tenantId, status])
+  @@index([workerId])
+}
+
+model ConnectionEvent {
+  id           String @id @default(cuid())
+  tenantId     String
+  connectionId String
+
+  eventType  String
+  fromStatus ConnectionStatus?
+  toStatus   ConnectionStatus?
+  message    String?
+  context    Json              @default("{}")
+
+  occurredAt DateTime @default(now())
+
+  connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, connectionId, occurredAt])
+}
+
+model WhatsAppGroup {
+  id           String @id @default(cuid())
+  tenantId     String
+  connectionId String
+
+  /// Provider-side chat id, e.g. "120363...@g.us".
+  externalId String
+  name       String
+  description String?
+  isGroup    Boolean @default(true)
+
+  /// Only monitored groups enter the processing pipeline.
+  isMonitored Boolean   @default(false)
+  monitoredAt DateTime?
+
+  participantCount Int       @default(0)
+  messageCount     Int       @default(0)
+  lastMessageAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection WhatsAppConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+  triggers AutomationTrigger[]
+
+  @@unique([connectionId, externalId])
+  @@index([tenantId, isMonitored])
+}
+
+// ============================================================================
+// MESSAGES
+// ============================================================================
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  CONTACT_CARD
+  STICKER
+  SYSTEM
+  OTHER
+}
+
+/// How the message entered the system. Live capture and replayed backlog are
+/// never conflated — the distinction drives UX and reprocessing rules.
+enum IngestSource {
+  LIVE
+  BACKLOG
+  MANUAL
+  DEMO
+}
+
+enum MessageStatus {
+  PENDING
+  CLASSIFIED
+  PROCESSING
+  EXTRACTED
+  SKIPPED
+  IGNORED
+  NEEDS_REVIEW
+  FAILED
+}
+
+model Message {
+  id           String  @id @default(cuid())
+  tenantId     String
+  connectionId String?
+  groupId      String?
+
+  /// Provider message id. Unique per connection — the primary duplicate guard.
+  externalId String
+
+  /// sha256(groupExternalId|senderId|timestamp|text). Secondary duplicate guard
+  /// covering manual/demo ingest and providers that reissue ids.
+  contentHash String
+
+  senderId    String?
+  senderName  String?
+  senderPhone String?
+
+  text        String?
+  messageType MessageType @default(TEXT)
+  /// Provider payload exactly as received — kept for reprocessing and audit.
+  metadata    Json        @default("{}")
+
+  isFromMe        Boolean @default(false)
+  quotedMessageId String?
+
+  /// Author clock (ordering authority) vs. our capture clock (SLA/monitoring).
+  timestamp  DateTime
+  receivedAt DateTime @default(now())
+
+  ingestSource IngestSource  @default(LIVE)
+  status       MessageStatus @default(PENDING)
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection WhatsAppConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  group      WhatsAppGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  classification MessageClassification?
+  recordSources  RecordSource[]
+  fieldEvents    RecordFieldEvent[]
+  originOf       ExtractedRecord[]
+
+  @@unique([tenantId, externalId])
+  @@unique([tenantId, contentHash])
+  @@index([tenantId, timestamp])
+  @@index([tenantId, groupId, timestamp])
+  @@index([tenantId, status, timestamp])
+}
+
+enum MessageCategory {
+  SALES
+  ORDER
+  PURCHASE
+  INVENTORY
+  PAYMENT
+  CUSTOMER
+  COMPLAINT
+  MEETING
+  TASK
+  HR
+  FINANCE
+  DELIVERY
+  LOGISTICS
+  ANNOUNCEMENT
+  OTHER
+  IGNORE
+}
+
+enum Importance {
+  HIGH
+  MEDIUM
+  LOW
+  IGNORE
+}
+
+model MessageClassification {
+  id        String @id @default(cuid())
+  tenantId  String
+  messageId String @unique
+
+  category   MessageCategory @default(OTHER)
+  importance Importance      @default(LOW)
+  confidence Float           @default(0)
+  reasoning  String?
+  /// Free-form labels the model surfaced (products, customers, amounts).
+  entities   Json            @default("{}")
+
+  provider     String?
+  model        String?
+  inputTokens  Int?
+  outputTokens Int?
+
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, category, createdAt])
+  @@index([tenantId, importance, createdAt])
+}
+
+// ============================================================================
+// EXTRACTION SCHEMA — the tenant-defined business entity
+// ============================================================================
+
+enum FieldType {
+  STRING
+  TEXT
+  NUMBER
+  INTEGER
+  DECIMAL
+  BOOLEAN
+  DATE
+  DATETIME
+  ENUM
+  EMAIL
+  PHONE
+  CURRENCY
+}
+
+model ExtractionSchema {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  description String?
+
+  /// Prompt/model configuration for extracting this entity.
+  provider            String?
+  model               String?
+  systemPrompt        String?
+  examples            Json    @default("[]")
+  confidenceThreshold Float   @default(0.7)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  fields      ExtractionField[]
+  automations Automation[]
+  records     ExtractedRecord[]
+
+  @@unique([tenantId, slug])
+}
+
+model ExtractionField {
+  id       String @id @default(cuid())
+  schemaId String
+
+  /// Key inside ExtractedRecord.data, e.g. "customerName".
+  key         String
+  label       String
+  type        FieldType @default(STRING)
+  required    Boolean   @default(false)
+  /// Participates in the record's natural identity when no output key is set.
+  isKeyField  Boolean   @default(false)
+  enumValues  String[]  @default([])
+  description String?
+  /// { min, max, pattern, minLength, maxLength }
+  validation  Json      @default("{}")
+  order       Int       @default(0)
+
+  schema ExtractionSchema @relation(fields: [schemaId], references: [id], onDelete: Cascade)
+
+  @@unique([schemaId, key])
+  @@index([schemaId, order])
+}
+
+// ============================================================================
+// AUTOMATION
+// ============================================================================
+
+enum AutomationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+  ERROR
+}
+
+enum ProcessingMode {
+  REAL_TIME
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+  MANUAL
+}
+
+enum DateRangeMode {
+  CURRENT_MESSAGE
+  TODAY
+  YESTERDAY
+  THIS_WEEK
+  LAST_WEEK
+  THIS_MONTH
+  LAST_MONTH
+  LAST_7_DAYS
+  CUSTOM
+  SINCE_LAST_SUCCESSFUL_RUN
+}
+
+model Automation {
+  id          String           @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  status      AutomationStatus @default(DRAFT)
+
+  schemaId String
+
+  processingMode ProcessingMode @default(REAL_TIME)
+  dateRangeMode  DateRangeMode  @default(SINCE_LAST_SUCCESSFUL_RUN)
+
+  /// Cron is derived from processingMode for the simple cases and supplied
+  /// directly for CUSTOM. Always evaluated in `timezone` (or the tenant's).
+  cronExpression String?
+  timezone       String?
+  scheduleHour   Int     @default(23)
+  scheduleMinute Int     @default(0)
+  /// 0 = Sunday … 6 = Saturday, for WEEKLY.
+  scheduleWeekday Int    @default(1)
+  /// Day of month for MONTHLY.
+  scheduleDay     Int    @default(1)
+
+  customFrom DateTime?
+  customTo   DateTime?
+
+  /// Incremental-processing cursor. Advanced ONLY on a fully successful run.
+  lastProcessedAt        DateTime?
+  lastProcessedMessageId String?
+  lastSuccessfulRunAt    DateTime?
+  lastRunAt              DateTime?
+  nextRunAt              DateTime?
+
+  /// Pre-AI filters — cheap message triage before spending tokens.
+  requireImportant  Boolean           @default(true)
+  minImportance     Importance        @default(MEDIUM)
+  categories        MessageCategory[] @default([])
+  keywordFilter     String?
+  minConfidence     Float             @default(0.7)
+
+  /// The natural-language description the user typed, and the AI draft it
+  /// produced. Kept for transparency — a generated automation is never
+  /// activated without human review.
+  nlPrompt   String?
+  aiGenerated Boolean @default(false)
+
+  pausedAt  DateTime?
+  createdBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schema ExtractionSchema @relation(fields: [schemaId], references: [id])
+
+  triggers      AutomationTrigger[]
+  actions       AutomationAction[]
+  outputTargets OutputTarget[]
+  runs          WorkflowRun[]
+  records       ExtractedRecord[]
+
+  @@index([tenantId, status])
+  @@index([status, nextRunAt])
+}
+
+enum TriggerType {
+  REAL_TIME
+  SCHEDULE
+  MANUAL
+  EVENT
+}
+
+/// Binds an automation to a source group, with its own cursor so one noisy or
+/// stalled group cannot block the others.
+model AutomationTrigger {
+  id           String      @id @default(cuid())
+  tenantId     String
+  automationId String
+  type         TriggerType @default(REAL_TIME)
+  groupId      String?
+  enabled      Boolean     @default(true)
+  config       Json        @default("{}")
+
+  lastProcessedMessageId String?
+  lastProcessedAt        DateTime?
+
+  createdAt DateTime @default(now())
+
+  automation Automation     @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  group      WhatsAppGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, groupId])
+  @@index([tenantId, groupId])
+}
+
+enum ActionType {
+  SAVE_RECORD
+  SYNC_OUTPUT
+  CALL_API
+  SEND_WEBHOOK
+  GENERATE_DOCUMENT
+  NOTIFY
+}
+
+model AutomationAction {
+  id           String     @id @default(cuid())
+  tenantId     String
+  automationId String
+  type         ActionType
+  name         String
+  order        Int        @default(0)
+  enabled      Boolean    @default(true)
+
+  outputTargetId String?
+  /// Expression evaluated against the record, e.g. `quantity > 0`.
+  condition      String?
+  config         Json    @default("{}")
+
+  retryPolicy     Json    @default("{\"maxAttempts\":3,\"backoff\":\"exponential\",\"initialDelayMs\":1000,\"maxDelayMs\":30000}")
+  timeoutMs       Int     @default(30000)
+  /// When false a failure fails the whole run rather than being logged and skipped.
+  continueOnError Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  automation   Automation    @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  outputTarget OutputTarget? @relation(fields: [outputTargetId], references: [id], onDelete: SetNull)
+
+  steps WorkflowRunStep[]
+
+  @@unique([automationId, order])
+  @@index([tenantId, automationId])
+}
+
+// ============================================================================
+// EXTRACTED RECORDS — the durable business data
+// ============================================================================
+
+enum RecordStatus {
+  DRAFT
+  VALIDATED
+  NEEDS_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model ExtractedRecord {
+  id           String  @id @default(cuid())
+  tenantId     String
+  schemaId     String
+  automationId String?
+
+  /// Human-readable natural key, e.g. "ABC Traders|Product X|2026-08-12".
+  naturalKey     String
+  /// sha256 of the normalized natural key — the uniqueness guard.
+  naturalKeyHash String
+
+  data       Json         @default("{}")
+  status     RecordStatus @default(DRAFT)
+  confidence Float        @default(0)
+
+  /// Bumped on every applied change; drives output no-op filtering.
+  version Int @default(1)
+
+  /// Message that first created this record (fast path for the lineage UI).
+  originMessageId String?
+
+  firstSeenAt DateTime  @default(now())
+  lastEventAt DateTime?
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  reviewNote  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schema        ExtractionSchema @relation(fields: [schemaId], references: [id], onDelete: Cascade)
+  automation    Automation?      @relation(fields: [automationId], references: [id], onDelete: SetNull)
+  originMessage Message?         @relation(fields: [originMessageId], references: [id], onDelete: SetNull)
+
+  sources     RecordSource[]
+  fieldEvents RecordFieldEvent[]
+  syncRecords OutputSyncRecord[]
+
+  @@unique([tenantId, schemaId, naturalKeyHash])
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, schemaId, lastEventAt])
+  @@index([tenantId, automationId, createdAt])
+}
+
+/// Lineage edge (message ⇄ record). Many-to-many: a record accumulates across
+/// many messages, and one message can yield several records.
+model RecordSource {
+  id        String @id @default(cuid())
+  tenantId  String
+  recordId  String
+  messageId String
+
+  isOrigin   Boolean @default(false)
+  confidence Float   @default(0)
+
+  createdAt DateTime @default(now())
+
+  record  ExtractedRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  message Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, messageId])
+  @@index([tenantId, messageId])
+}
+
+/// Append-only field history. `ExtractedRecord.data` is the fold over these
+/// events ordered by `eventAt` (the message's own timestamp), so out-of-order
+/// processing still converges on the chronologically-correct value.
+/// Nothing is ever deleted — superseded events are stored with applied = false.
+model RecordFieldEvent {
+  id       String @id @default(cuid())
+  tenantId String
+  recordId String
+
+  fieldKey      String
+  previousValue Json?
+  newValue      Json?
+
+  eventAt   DateTime
+  appliedAt DateTime @default(now())
+
+  applied    Boolean @default(true)
+  skipReason String?
+
+  messageId String?
+
+  record  ExtractedRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  message Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, recordId, eventAt])
+  @@index([recordId, fieldKey, eventAt])
+}
+
+// ============================================================================
+// OUTPUTS & SYNCHRONIZATION
+// ============================================================================
+
+enum OutputType {
+  EXCEL
+  CSV
+  GOOGLE_SHEETS
+  PDF
+  POWERPOINT
+  WEBHOOK
+  REST_API
+  CLIENT_WEBSITE
+  CLIENT_ADMIN
+}
+
+enum OutputOperation {
+  CREATE_NEW
+  APPEND
+  UPDATE_EXISTING
+  UPSERT
+  REPLACE
+  GENERATE_NEW_VERSION
+}
+
+enum OutputStatus {
+  ACTIVE
+  PAUSED
+  SYNCING
+  SUCCESS
+  PARTIAL_SUCCESS
+  FAILED
+  CONFLICT
+  DISCONNECTED
+}
+
+/// The logical output the user manages — "Master Sales.xlsx", "Client stock API".
+/// May be fed by more than one automation via OutputTarget.
+model Output {
+  id       String       @id @default(cuid())
+  tenantId String
+  name     String
+  type     OutputType
+  status   OutputStatus @default(ACTIVE)
+
+  /// Type-specific settings:
+  ///   EXCEL/CSV     { storageRef, worksheet, headerRow, fileName, columns[] }
+  ///   GOOGLE_SHEETS { spreadsheetId, worksheetTitle, headerRow }
+  ///   REST_API      { baseUrl, method, createPath, updatePath, lookupPath, headers }
+  ///   WEBHOOK       { url, method, headers }
+  config Json @default("{}")
+
+  integrationId String?
+
+  currentVersion Int       @default(0)
+  recordCount    Int       @default(0)
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  lastSyncStatus String?
+  lastError      String?
+
+  /// Optimistic-concurrency state for conflict detection. If the file changed
+  /// underneath us since the last sync, we refuse to write.
+  lastKnownChecksum   String?
+  lastKnownModifiedAt DateTime?
+
+  /// Destructive operations against client systems stay off unless a human
+  /// enables them. No AI output or condition expression can flip this.
+  allowDelete Boolean @default(false)
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  targets     OutputTarget[]
+  versions    OutputVersion[]
+  syncRecords OutputSyncRecord[]
+  conflicts   OutputConflict[]
+  runs        WorkflowRun[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, type])
+  @@index([status, nextSyncAt])
+}
+
+/// Binds one automation to one output, carrying the operation and mapping.
+/// This is the row that says "this automation UPSERTs into that workbook".
+model OutputTarget {
+  id           String @id @default(cuid())
+  tenantId     String
+  automationId String
+  outputId     String
+
+  operation OutputOperation @default(UPSERT)
+  enabled   Boolean         @default(true)
+  order     Int             @default(0)
+
+  /// Independent schedule; falls back to the automation's when null.
+  cronExpression String?
+  config         Json    @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  output     Output     @relation(fields: [outputId], references: [id], onDelete: Cascade)
+
+  mappings OutputMapping[]
+  actions  AutomationAction[]
+
+  @@unique([automationId, outputId])
+  @@index([tenantId, outputId])
+}
+
+/// Per-field write policy. Guards real business data from being clobbered.
+enum UpdateStrategy {
+  ALWAYS_UPDATE
+  UPDATE_IF_EMPTY
+  NEVER_UPDATE
+  UPDATE_IF_NEWER
+}
+
+model OutputMapping {
+  id             String @id @default(cuid())
+  tenantId       String
+  outputTargetId String
+
+  /// Key inside ExtractedRecord.data.
+  sourceField String
+  /// Column header / API field name on the target side.
+  targetField String
+  /// Excel column letter, when the sheet has a fixed layout.
+  targetColumn String?
+
+  updateStrategy UpdateStrategy @default(ALWAYS_UPDATE)
+  /// { type: "date", format: "dd-MM-yyyy" } | { type: "number", decimals: 2 }
+  transform      Json           @default("{}")
+  defaultValue   String?
+
+  /// Unique-key participation. Composite keys order by keyOrder ascending.
+  isKeyPart Boolean @default(false)
+  keyOrder  Int?
+
+  order Int @default(0)
+
+  outputTarget OutputTarget @relation(fields: [outputTargetId], references: [id], onDelete: Cascade)
+
+  @@unique([outputTargetId, targetField])
+  @@index([tenantId, outputTargetId])
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  STALE
+  FAILED
+  CONFLICT
+  SKIPPED
+}
+
+/// Per-record, per-output sync state. This is what makes UPDATE/UPSERT against
+/// a pre-existing 15,000-row workbook cheap: it remembers which external row
+/// each record owns, so we never rescan the sheet to find it again.
+model OutputSyncRecord {
+  id       String @id @default(cuid())
+  tenantId String
+  outputId String
+  recordId String
+
+  externalRowId    String?
+  externalRecordId String?
+
+  syncStatus SyncStatus @default(PENDING)
+  /// ExtractedRecord.version at the last successful write — lets unchanged
+  /// records be skipped without touching the target at all.
+  syncVersion  Int      @default(0)
+  lastSyncedAt DateTime?
+  errorMessage String?
+  attempts     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  output Output          @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  record ExtractedRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([outputId, recordId])
+  @@index([tenantId, outputId, syncStatus])
+  @@index([tenantId, recordId])
+}
+
+model OutputVersion {
+  id       String @id @default(cuid())
+  tenantId String
+  outputId String
+
+  version     Int
+  storageRef  String
+  checksum    String
+  recordCount Int     @default(0)
+  sizeBytes   Int     @default(0)
+  operation   String?
+  note        String?
+  createdBy   String?
+
+  createdAt DateTime @default(now())
+
+  output Output @relation(fields: [outputId], references: [id], onDelete: Cascade)
+
+  @@unique([outputId, version])
+  @@index([tenantId, outputId, createdAt])
+}
+
+enum ConflictResolution {
+  PENDING
+  USE_LATEST_FILE
+  KEEP_AUTOMATION_VERSION
+  MERGED
+  IGNORED
+}
+
+/// Raised when the target changed outside MsgFlow since the last sync.
+model OutputConflict {
+  id       String @id @default(cuid())
+  tenantId String
+  outputId String
+
+  expectedChecksum String?
+  actualChecksum   String?
+  expectedVersion  Int?
+  detail           Json    @default("{}")
+
+  resolution ConflictResolution @default(PENDING)
+  resolvedBy String?
+  resolvedAt DateTime?
+  detectedAt DateTime           @default(now())
+
+  output Output @relation(fields: [outputId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, outputId, resolution])
+}
+
+// ============================================================================
+// WORKFLOW ENGINE
+// ============================================================================
+
+enum RunTrigger {
+  SCHEDULE
+  MANUAL
+  REAL_TIME
+  SYNC_NOW
+  BACKLOG
+  REPROCESS
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  PARTIAL_SUCCESS
+  FAILED
+  CANCELLED
+  RETRYING
+}
+
+model WorkflowRun {
+  id           String @id @default(cuid())
+  tenantId     String
+  automationId String?
+  outputId     String?
+
+  trigger   RunTrigger
+  status    RunStatus  @default(QUEUED)
+  startedBy String?
+
+  /// The resolved processing window. Stored explicitly so a run stays
+  /// reproducible even after the automation's configuration changes.
+  windowStart DateTime?
+  windowEnd   DateTime?
+
+  messagesScanned   Int @default(0)
+  messagesProcessed Int @default(0)
+  recordsCreated    Int @default(0)
+  recordsUpdated    Int @default(0)
+  recordsSkipped    Int @default(0)
+  recordsFailed     Int @default(0)
+  rowsCreated       Int @default(0)
+  rowsUpdated       Int @default(0)
+  rowsSkipped       Int @default(0)
+  rowsFailed        Int @default(0)
+
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  costUsd      Decimal @default(0) @db.Decimal(12, 6)
+
+  errorMessage String?
+  summary      Json    @default("{}")
+
+  queuedAt   DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+  output     Output?     @relation(fields: [outputId], references: [id], onDelete: SetNull)
+
+  steps WorkflowRunStep[]
+
+  @@index([tenantId, queuedAt])
+  @@index([tenantId, automationId, queuedAt])
+  @@index([tenantId, status])
+}
+
+model WorkflowRunStep {
+  id       String @id @default(cuid())
+  tenantId String
+  runId    String
+  actionId String?
+
+  name   String
+  type   ActionType
+  order  Int        @default(0)
+  status RunStatus  @default(QUEUED)
+
+  attempt      Int     @default(0)
+  maxAttempts  Int     @default(3)
+  input        Json?
+  output       Json?
+  errorMessage String?
+  durationMs   Int?
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  run    WorkflowRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  action AutomationAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, runId, order])
+}
+
+// ============================================================================
+// INTEGRATIONS & CREDENTIALS
+// ============================================================================
+
+enum IntegrationType {
+  GOOGLE_SHEETS
+  GOOGLE_DRIVE
+  REST_API
+  WEBHOOK
+  CLIENT_WEBSITE
+  CLIENT_ADMIN
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  CONNECTED
+  ERROR
+  EXPIRED
+  MOCK
+}
+
+model Integration {
+  id       String            @id @default(cuid())
+  tenantId String
+  type     IntegrationType
+  name     String
+  status   IntegrationStatus @default(NOT_CONFIGURED)
+
+  /// Non-secret settings only. Secrets live in IntegrationCredential.
+  config Json @default("{}")
+
+  lastCheckedAt DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  credentials IntegrationCredential[]
+  outputs     Output[]
+
+  @@index([tenantId, type])
+}
+
+enum CredentialType {
+  OAUTH2
+  API_KEY
+  BEARER_TOKEN
+  BASIC_AUTH
+  HMAC
+  NONE
+}
+
+model IntegrationCredential {
+  id            String         @id @default(cuid())
+  tenantId      String
+  integrationId String
+  type          CredentialType @default(API_KEY)
+
+  /// AES-256-GCM envelope. Never logged, never returned to the client — the
+  /// API exposes only name/type/validity.
+  encryptedPayload String
+  keyVersion       Int      @default(1)
+
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  isValid    Boolean   @default(true)
+  lastError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, integrationId])
+}
+
+// ============================================================================
+// EXPORTS, AUDIT, USAGE, OPS
+// ============================================================================
+
+enum ExportStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
+model Export {
+  id       String       @id @default(cuid())
+  tenantId String
+  status   ExportStatus @default(QUEUED)
+
+  /// messages | records | runs | analytics
+  entity   String
+  /// xlsx | csv | pdf | pptx
+  format   String
+  fileName String
+  storageRef String?
+  sizeBytes  Int     @default(0)
+
+  filters     Json @default("{}")
+  recordCount Int  @default(0)
+
+  errorMessage String?
+  requestedBy  String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model AuditLog {
+  id       String  @id @default(cuid())
+  tenantId String
+  userId   String?
+
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, userId, createdAt])
+}
+
+model AIUsage {
+  id       String @id @default(cuid())
+  tenantId String
+
+  provider  String
+  model     String
+  /// classify | extract | generate_automation | validate
+  operation String
+
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  costUsd      Decimal @default(0) @db.Decimal(12, 6)
+  durationMs   Int     @default(0)
+  success      Boolean @default(true)
+  errorMessage String?
+
+  messageId    String?
+  automationId String?
+  runId        String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, provider, createdAt])
+}
+
+enum WorkerStatus {
+  STARTING
+  ONLINE
+  DEGRADED
+  OFFLINE
+}
+
+model Worker {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  hostname String
+  pid      Int?
+  version  String?
+  status   WorkerStatus @default(STARTING)
+
+  /// Which queues this process serves, e.g. ["whatsapp","ai","output"].
+  capabilities String[] @default([])
+
+  lastHeartbeatAt DateTime?
+  startedAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  connections WhatsAppConnection[]
+  heartbeats  WorkerHeartbeat[]
+
+  @@index([status, lastHeartbeatAt])
+}
+
+model WorkerHeartbeat {
+  id       String @id @default(cuid())
+  workerId String
+
+  status       WorkerStatus @default(ONLINE)
+  cpuPercent   Float?
+  memoryMb     Float?
+  uptimeSec    Int?
+  connections  Int          @default(0)
+  messagesSeen Int          @default(0)
+  queueDepth   Int          @default(0)
+  detail       Json         @default("{}")
+
+  createdAt DateTime @default(now())
+
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workerId, createdAt])
+}
+
+/// Layers of the health hierarchy rendered on the dashboard.
+enum HealthLayer {
+  DATABASE
+  WORKER
+  WHATSAPP
+  GROUP_LISTENER
+  QUEUE
+  AI
+  WORKFLOW
+  OUTPUT
+}
+
+enum HealthState {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+model HealthCheck {
+  id       String      @id @default(cuid())
+  tenantId String?
+  layer    HealthLayer
+  state    HealthState @default(UNKNOWN)
+
+  subjectId String?
+  message   String?
+  detail    Json     @default("{}")
+  latencyMs Int?
+
+  checkedAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, layer, checkedAt])
+}
+
+model ApiKey {
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
+
+  /// Displayed prefix (e.g. "mf_live_a1b2") plus a hash of the full key.
+  /// The full key is shown exactly once, at creation.
+  prefix  String @unique
+  keyHash String @unique
+
+  scopes     String[]  @default([])
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdBy  String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, revokedAt])
+}
+
+enum NotificationSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+model Notification {
+  id       String  @id @default(cuid())
+  tenantId String
+  userId   String?
+
+  severity NotificationSeverity @default(INFO)
+  /// Stable machine code, e.g. "WHATSAPP_CONNECTION_LOST", "SYNC_CONFLICT".
+  code     String
+  title    String
+  body     String?
+  link     String?
+  context  Json                 @default("{}")
+
+  readAt         DateTime?
+  acknowledgedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, readAt])
+}

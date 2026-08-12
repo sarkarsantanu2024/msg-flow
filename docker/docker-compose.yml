@@ -1,0 +1,63 @@
+# ============================================================
+# MsgFlow — local development stack
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# Brings up PostgreSQL and the WhatsApp worker. Run the Next.js app on the
+# host with `pnpm dev` so hot reload still works.
+#
+# In production the web app goes to Vercel and only the worker runs here.
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: msgflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: msgflow
+      POSTGRES_PASSWORD: msgflow
+      POSTGRES_DB: msgflow
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U msgflow -d msgflow']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    container_name: msgflow-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      # host.docker.internal reaches `pnpm dev` running on the host machine.
+      APP_URL: ${APP_URL:-http://host.docker.internal:3000}
+      WHATSAPP_WORKER_SECRET: ${WHATSAPP_WORKER_SECRET:-dev-only-worker-secret}
+      WORKER_NAME: ${WORKER_NAME:-worker-docker}
+      WORKER_PORT: '4000'
+      PUPPETEER_HEADLESS: 'true'
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      SCHEDULER_ENABLED: 'true'
+    ports:
+      - '4000:4000'
+    volumes:
+      # Persist the WhatsApp session so a restart does not force a new QR scan.
+      - worker-sessions:/app/apps/worker/.sessions
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    # Chromium is memory-hungry; without this a busy account can OOM the host.
+    shm_size: '1gb'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  worker-sessions:

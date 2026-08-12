@@ -1,0 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 11 requires explicit approval for postinstall scripts.
+# Prisma's engine download is mandatory — the client cannot be generated without it.
+# Puppeteer downloads Chromium (~150 MB) for the WhatsApp worker; set
+# PUPPETEER_SKIP_DOWNLOAD=true when installing on a machine that will only run
+# the web app, and install the browser later with:
+#   pnpm --filter @msgflow/worker exec puppeteer browsers install chrome
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  puppeteer: true
+  sharp: true
+  unrs-resolver: true
