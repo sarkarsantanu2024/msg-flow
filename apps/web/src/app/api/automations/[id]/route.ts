@@ -1,4 +1,4 @@
-import { assertTenantOwned, prisma, recordAudit } from '@msgflow/db';
+import { assertTenantOwned, prisma, recordAudit, type Prisma } from '@msgflow/db';
 import { computeNextRun } from '@msgflow/workflow';
 import { z } from 'zod';
 import { ok, readJson, route } from '@/lib/api';
@@ -80,7 +80,7 @@ export const PATCH = route(async (request: Request, { params }: { params: Promis
     timezone: automation.timezone || context.timezone,
   };
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (input.groupIds) {
       const owned = await tx.whatsAppGroup.findMany({
         where: { id: { in: input.groupIds }, tenantId: context.tenantId },

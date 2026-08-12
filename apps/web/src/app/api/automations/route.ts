@@ -56,7 +56,7 @@ export const POST = route(async (request: Request) => {
     throw new AppError('VALIDATION_FAILED', 'One or more selected groups do not belong to this workspace.');
   }
 
-  const automation = await prisma.$transaction(async (tx) => {
+  const automation = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     let schemaId = input.schemaId;
 
     if (!schemaId && input.schema) {
