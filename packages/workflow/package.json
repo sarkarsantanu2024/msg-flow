@@ -1,0 +1,31 @@
+{
+  "name": "@msgflow/workflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"[workflow] no lint targets\""
+  },
+  "dependencies": {
+    "@msgflow/ai": "workspace:*",
+    "@msgflow/config": "workspace:*",
+    "@msgflow/connectors": "workspace:*",
+    "@msgflow/db": "workspace:*",
+    "@msgflow/logger": "workspace:*",
+    "@msgflow/types": "workspace:*",
+    "@msgflow/validation": "workspace:*",
+    "cron-parser": "^4.9.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}

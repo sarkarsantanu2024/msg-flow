@@ -1,0 +1,36 @@
+{
+  "name": "msgflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MsgFlow — Turn Messages Into Business Data.",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @msgflow/web dev",
+    "worker:dev": "pnpm --filter @msgflow/worker dev",
+    "build": "pnpm --filter @msgflow/db build && pnpm -r --filter=!@msgflow/db build",
+    "start": "pnpm --filter @msgflow/web start",
+    "worker:start": "pnpm --filter @msgflow/worker start",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma": "pnpm --filter @msgflow/db exec prisma",
+    "db:generate": "pnpm --filter @msgflow/db generate",
+    "db:push": "pnpm --filter @msgflow/db push",
+    "db:migrate": "pnpm --filter @msgflow/db migrate",
+    "db:seed": "pnpm --filter @msgflow/db seed",
+    "db:studio": "pnpm --filter @msgflow/db studio",
+    "validate": "pnpm db:generate && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "exceljs": "^4.4.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
