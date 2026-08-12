@@ -1,16 +1,13 @@
 import type { Metadata, Viewport } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/misc';
+// Self-hosted, like material-symbols below. `next/font/google` downloads the
+// font from fonts.gstatic.com during the build, which fails on a builder with
+// restricted or flaky egress and takes the whole deployment down with it.
+// The variable font ships every weight we used (400–800) in one file.
+import '@fontsource-variable/plus-jakarta-sans';
 import 'material-symbols/rounded.css';
 import './globals.css';
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-sans',
-  weight: ['400', '500', '600', '700', '800'],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -34,7 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={jakarta.variable} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans text-sm antialiased">
         <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         <Toaster richColors position="top-right" closeButton />

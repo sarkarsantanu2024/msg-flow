@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@msgflow/ai": "workspace:*",
     "@msgflow/config": "workspace:*",
     "@msgflow/connectors": "workspace:*",

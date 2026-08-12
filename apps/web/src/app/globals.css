@@ -4,6 +4,10 @@
 
 @layer base {
   :root {
+    /* Family name published by @fontsource-variable/plus-jakarta-sans, imported
+       in app/layout.tsx. Tailwind's `sans` stack reads this variable. */
+    --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+
     --background: 0 0% 100%;
     --foreground: 222 47% 11%;
 
