@@ -1,0 +1,28 @@
+# The worker image is built from the repository root, so everything the web app
+# and local development leave behind would otherwise be copied into it.
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+.git
+.github
+
+.env
+.env.*
+!.env.example
+
+# WhatsApp session data — credentials, and the container mounts its own volume.
+.wwebjs_auth
+.wwebjs_cache
+**/.sessions
+
+storage
+**/storage
+*.log
+*.tsbuildinfo
+**/.prisma
+
+docs
+README.md
