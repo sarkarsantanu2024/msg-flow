@@ -133,7 +133,7 @@ merges distinct records; too many splits one record into several.
 
 **A record shows an old value**
 Field history on the record page shows every event and whether it was applied. A value recorded with
-`applied = false` was superseded by a message with a *later* send time.
+`applied = false` was superseded by a message with a _later_ send time.
 
 **Edited a record but the output did not change**
 Editing marks the sync state stale; the change lands on the next sync. Use **Sync Now** to apply it
@@ -155,7 +155,7 @@ Chromium. Give it 1 GB+, and restart on a schedule if you run many sessions on o
 ## Diagnostics
 
 ```bash
-curl http://localhost:3000/api/health     # every layer
+curl https://msg-flow.vercel.app/api/health     # every layer
 curl http://localhost:4000/health         # worker liveness
 pnpm db:studio                            # browse the data
 LOG_LEVEL=debug pnpm worker:dev           # verbose worker logs

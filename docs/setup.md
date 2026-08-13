@@ -83,7 +83,7 @@ Password: msgflow-demo-2026
 ## 4. Run
 
 ```bash
-pnpm dev            # http://localhost:3000
+pnpm dev            # https://msg-flow.vercel.app
 ```
 
 Second terminal:
