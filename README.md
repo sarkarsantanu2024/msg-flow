@@ -3,7 +3,7 @@
 **Turn Messages Into Business Data.**
 
 MsgFlow reads the business messages your team already sends on WhatsApp, understands them with AI,
-and continuously **creates *and updates*** your Excel files, Google Sheets, APIs and reports.
+and continuously **creates _and updates_** your Excel files, Google Sheets, APIs and reports.
 
 It is not an export tool. The database is the source of truth; every output is a projection that
 MsgFlow keeps in step.
@@ -26,7 +26,7 @@ cp .env.example .env          # a .env with generated secrets is already present
 pnpm db:generate
 pnpm db:push                  # or: pnpm db:migrate
 pnpm db:seed
-pnpm dev                      # http://localhost:3000
+pnpm dev                      # https://msg-flow.vercel.app
 ```
 
 In a second terminal:
@@ -37,9 +37,9 @@ pnpm worker:dev               # http://localhost:4000
 
 **Demo sign-in** (created by the seed):
 
-| | |
-|---|---|
-| Email | `demo@msgflow.app` |
+|          |                     |
+| -------- | ------------------- |
+| Email    | `demo@msgflow.app`  |
 | Password | `msgflow-demo-2026` |
 
 The owner account is also a platform super admin, so `/admin` is reachable.
@@ -85,8 +85,8 @@ Business Platform slots in as one more file.
 stored and can be reprocessed. Nothing depends on WhatsApp still having it.
 
 **Records are folded from field events, not overwritten.** Given stock `100 @ 10:00 → 80 @ 11:00 →
-75 @ 12:00`, the record converges on 75 regardless of the order messages were *processed* in,
-because ordering is by when they were *sent*. A late-arriving older message is recorded but not
+75 @ 12:00`, the record converges on 75 regardless of the order messages were _processed_ in,
+because ordering is by when they were _sent_. A late-arriving older message is recorded but not
 applied — nothing is ever deleted.
 
 **`OutputSyncRecord` remembers which external row each record owns.** That is what makes UPSERT into
@@ -106,20 +106,20 @@ the provider message id and on a content hash.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `pnpm dev` | Next.js app on :3000 |
-| `pnpm worker:dev` | WhatsApp worker on :4000, with reload |
-| `pnpm db:generate` | Generate the Prisma client |
-| `pnpm db:push` | Push the schema without a migration (fastest for local work) |
-| `pnpm db:migrate` | Create and apply a migration |
-| `pnpm db:seed` | Populate a demo workspace |
-| `pnpm db:studio` | Prisma Studio |
-| `pnpm test` | Run the test suite |
-| `pnpm typecheck` | TypeScript across every package |
-| `pnpm lint` | ESLint |
-| `pnpm build` | Production build |
-| `pnpm validate` | generate → typecheck → lint → test → build |
+| Command            | What it does                                                 |
+| ------------------ | ------------------------------------------------------------ |
+| `pnpm dev`         | Next.js app on :3000                                         |
+| `pnpm worker:dev`  | WhatsApp worker on :4000, with reload                        |
+| `pnpm db:generate` | Generate the Prisma client                                   |
+| `pnpm db:push`     | Push the schema without a migration (fastest for local work) |
+| `pnpm db:migrate`  | Create and apply a migration                                 |
+| `pnpm db:seed`     | Populate a demo workspace                                    |
+| `pnpm db:studio`   | Prisma Studio                                                |
+| `pnpm test`        | Run the test suite                                           |
+| `pnpm typecheck`   | TypeScript across every package                              |
+| `pnpm lint`        | ESLint                                                       |
+| `pnpm build`       | Production build                                             |
+| `pnpm validate`    | generate → typecheck → lint → test → build                   |
 
 ---
 
@@ -127,16 +127,16 @@ the provider message id and on a content hash.
 
 Every variable is documented in [`.env.example`](.env.example). The ones that matter:
 
-| Variable | Required | Notes |
-|---|---|---|
-| `DATABASE_URL` | yes | Neon pooled connection string |
-| `DIRECT_URL` | for migrations | Neon direct (non-pooled) connection |
-| `AUTH_SECRET` | yes | `openssl rand -base64 32` |
-| `ENCRYPTION_KEY` | yes | 32 bytes; encrypts stored integration credentials |
-| `WHATSAPP_WORKER_SECRET` | yes | Shared secret between app and worker |
-| `AI_PROVIDER` | no | `anthropic` · `openai` · `gemini` · `mock` (default) |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | no | Missing key ⇒ falls back to mock, and says so in the UI |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | **Google Sheets connector only — never used for sign-in** |
+| Variable                                                  | Required       | Notes                                                     |
+| --------------------------------------------------------- | -------------- | --------------------------------------------------------- |
+| `DATABASE_URL`                                            | yes            | Neon pooled connection string                             |
+| `DIRECT_URL`                                              | for migrations | Neon direct (non-pooled) connection                       |
+| `AUTH_SECRET`                                             | yes            | `openssl rand -base64 32`                                 |
+| `ENCRYPTION_KEY`                                          | yes            | 32 bytes; encrypts stored integration credentials         |
+| `WHATSAPP_WORKER_SECRET`                                  | yes            | Shared secret between app and worker                      |
+| `AI_PROVIDER`                                             | no             | `anthropic` · `openai` · `gemini` · `mock` (default)      |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | no             | Missing key ⇒ falls back to mock, and says so in the UI   |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | no             | **Google Sheets connector only — never used for sign-in** |
 
 **Sign-in is email and password only.** Accounts are created directly in MsgFlow with a username and
 password the user chooses. There is no Google or other third-party sign-in anywhere in the product.
@@ -145,21 +145,21 @@ password the user chooses. There is no Google or other third-party sign-in anywh
 
 ## Documentation
 
-| Guide | Covers |
-|---|---|
-| [architecture.md](docs/architecture.md) | How the pieces fit, and why |
-| [setup.md](docs/setup.md) | Local development from zero |
-| [database.md](docs/database.md) | Every model and the reasoning behind it |
-| [whatsapp.md](docs/whatsapp.md) | Connecting, QR flow, connection states |
-| [worker.md](docs/worker.md) | Running and deploying the worker |
-| [ai.md](docs/ai.md) | Provider abstraction, prompts, cost |
-| [automation.md](docs/automation.md) | Schedules, processing windows, incremental runs |
-| [outputs.md](docs/outputs.md) | Operations, mapping, unique keys, update strategies |
-| [excel-sync.md](docs/excel-sync.md) | Updating existing workbooks — and the honest limits |
-| [deployment.md](docs/deployment.md) | Vercel + Railway/Render/Fly + Neon |
-| [security.md](docs/security.md) | Tenant isolation, RBAC, encryption, rate limiting |
-| [api.md](docs/api.md) | Every route |
-| [troubleshooting.md](docs/troubleshooting.md) | When things go wrong |
+| Guide                                         | Covers                                              |
+| --------------------------------------------- | --------------------------------------------------- |
+| [architecture.md](docs/architecture.md)       | How the pieces fit, and why                         |
+| [setup.md](docs/setup.md)                     | Local development from zero                         |
+| [database.md](docs/database.md)               | Every model and the reasoning behind it             |
+| [whatsapp.md](docs/whatsapp.md)               | Connecting, QR flow, connection states              |
+| [worker.md](docs/worker.md)                   | Running and deploying the worker                    |
+| [ai.md](docs/ai.md)                           | Provider abstraction, prompts, cost                 |
+| [automation.md](docs/automation.md)           | Schedules, processing windows, incremental runs     |
+| [outputs.md](docs/outputs.md)                 | Operations, mapping, unique keys, update strategies |
+| [excel-sync.md](docs/excel-sync.md)           | Updating existing workbooks — and the honest limits |
+| [deployment.md](docs/deployment.md)           | Vercel + Railway/Render/Fly + Neon                  |
+| [security.md](docs/security.md)               | Tenant isolation, RBAC, encryption, rate limiting   |
+| [api.md](docs/api.md)                         | Every route                                         |
+| [troubleshooting.md](docs/troubleshooting.md) | When things go wrong                                |
 
 ---
 
@@ -168,7 +168,7 @@ password the user chooses. There is no Google or other third-party sign-in anywh
 Stated plainly rather than discovered later:
 
 - **Google Sheets needs credentials.** Without them the connector runs in mock mode: mapping, key
-  matching and update strategies all execute and report what they *would* do, but nothing is written
+  matching and update strategies all execute and report what they _would_ do, but nothing is written
   to Google. The UI says so.
 - **`.xlsm` macro workbooks are rejected**, because macros cannot be preserved through a
   programmatic write. Save as `.xlsx`.

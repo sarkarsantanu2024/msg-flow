@@ -30,7 +30,7 @@ pnpm worker:start   # plain
 ### Configuration
 
 ```env
-APP_URL="http://localhost:3000"
+APP_URL="https://msg-flow.vercel.app"
 WHATSAPP_WORKER_SECRET="must-match-the-web-app"
 WORKER_PORT="4000"
 WORKER_NAME="worker-local"
@@ -46,17 +46,17 @@ SCHEDULER_INTERVAL_MS="60000"
 
 Authenticated with `Authorization: Bearer $WHATSAPP_WORKER_SECRET`, except `/health`.
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Liveness — unauthenticated, for container health checks |
-| `GET` | `/connections` | Sessions this worker owns |
-| `GET` | `/connections/:id/status` | Full provider status |
-| `POST` | `/connections/:id/connect` | Start a session |
-| `POST` | `/connections/:id/reconnect` | Restart, keeping the stored session |
-| `POST` | `/connections/:id/refresh-qr` | Force a fresh QR |
-| `POST` | `/connections/:id/disconnect` | Stop, keeping the session |
-| `POST` | `/connections/:id/logout` | Destroy the session |
-| `POST` | `/connections/:id/sync-groups` | Re-discover groups |
+| Method | Path                           | Purpose                                                 |
+| ------ | ------------------------------ | ------------------------------------------------------- |
+| `GET`  | `/health`                      | Liveness — unauthenticated, for container health checks |
+| `GET`  | `/connections`                 | Sessions this worker owns                               |
+| `GET`  | `/connections/:id/status`      | Full provider status                                    |
+| `POST` | `/connections/:id/connect`     | Start a session                                         |
+| `POST` | `/connections/:id/reconnect`   | Restart, keeping the stored session                     |
+| `POST` | `/connections/:id/refresh-qr`  | Force a fresh QR                                        |
+| `POST` | `/connections/:id/disconnect`  | Stop, keeping the session                               |
+| `POST` | `/connections/:id/logout`      | Destroy the session                                     |
+| `POST` | `/connections/:id/sync-groups` | Re-discover groups                                      |
 
 `connect`, `reconnect` and `refresh-qr` return immediately and report progress through connection
 state callbacks — `initialize()` can take 30+ seconds while Chromium boots, and the HTTP caller
