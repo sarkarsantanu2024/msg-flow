@@ -101,12 +101,3 @@ export function DateFilter({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
-
-/** Resolve `preset`/`from`/`to` search params into concrete dates, server-side. */
-export function parseDateParams(searchParams: { preset?: string; from?: string; to?: string }) {
-  return {
-    preset: searchParams.preset ?? 'last7',
-    from: searchParams.from ? new Date(`${searchParams.from}T00:00:00`) : undefined,
-    to: searchParams.to ? new Date(`${searchParams.to}T23:59:59`) : undefined,
-  };
-}

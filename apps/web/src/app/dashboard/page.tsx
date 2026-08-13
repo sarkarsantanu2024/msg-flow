@@ -11,7 +11,8 @@ import {
   resolvePreset,
 } from '@/lib/queries';
 import { PageHeader, StatTile } from '@/components/dashboard/page-header';
-import { DateFilter, parseDateParams } from '@/components/dashboard/date-filter';
+import { DateFilter } from '@/components/dashboard/date-filter';
+import { parseDateParams } from '@/lib/date-params';
 import { TrendChart, BarsChart } from '@/components/charts';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
