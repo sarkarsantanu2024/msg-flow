@@ -18,8 +18,13 @@ const nextConfig = {
   // function found .prisma/client and no engine inside it — every query then
   // failed with "could not locate the Query Engine for runtime rhel-openssl-3.0.x".
   // pnpm's store path is content-hashed, hence the glob.
+  // scripts/copy-prisma-engine.mjs stages the engine inside the app before the
+  // build, so this include is project-relative — reaching across the workspace
+  // into pnpm's store traced correctly in a local build but not on Vercel.
+  // Both paths are listed: whichever one tracing honours, the engine ships.
   outputFileTracingIncludes: {
     '/**/*': [
+      './.prisma/client/*.node',
       '../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node',
     ],
   },

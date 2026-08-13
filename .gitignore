@@ -18,6 +18,8 @@ Thumbs.db
 
 # Prisma
 packages/db/generated/
+# Query engine staged into the web app at build time — platform-specific binary
+apps/web/.prisma/
 
 # WhatsApp session data (never commit — contains auth credentials)
 .wwebjs_auth/
