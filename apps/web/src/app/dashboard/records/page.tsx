@@ -96,10 +96,10 @@ export default async function RecordsPage({
           {records.length === 0 ? (
             <EmptyState
               title="No records yet"
-              description="Records appear once an automation extracts structured data from your messages. Try Demo Mode to see it work without WhatsApp."
+              description="Records appear once an automation extracts structured data from your messages. Set up an automation and monitor a group to get started."
               action={
                 <Button asChild>
-                  <Link href="/dashboard/demo">Try Demo Mode</Link>
+                  <Link href="/dashboard/automations">Set up an automation</Link>
                 </Button>
               }
             />

@@ -80,6 +80,9 @@ export class WhatsAppWebProvider implements MessageProvider {
   private lastMessageAt: number | null = null;
   private lastError: string | null = null;
   private starting = false;
+  /** Chat id → group name, filled by listGroups. handleMessage reads it so it
+   *  never has to serialise a chat object just to label a message. */
+  private groupNames = new Map<string, string>();
 
   private messageHandlers: Array<(message: NormalizedMessage) => void | Promise<void>> = [];
   private stateHandlers: Array<(status: ProviderStatus) => void | Promise<void>> = [];
@@ -151,6 +154,11 @@ export class WhatsAppWebProvider implements MessageProvider {
         puppeteer: {
           headless: config.PUPPETEER_HEADLESS,
           executablePath: config.PUPPETEER_EXECUTABLE_PATH,
+          // The first sync after pairing pulls the whole chat list, and a large
+          // account can hold a single CDP call open past puppeteer's 180s
+          // default — surfacing as "Runtime.callFunctionOn timed out" and a
+          // half-initialised client that keeps its profile directory locked.
+          protocolTimeout: 300_000,
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -238,18 +246,46 @@ export class WhatsAppWebProvider implements MessageProvider {
   }
 
   private async handleMessage(message: WwebMessage): Promise<void> {
-    // Only group traffic is of interest; direct chats are out of scope.
-    const chat = await message.getChat();
-    if (!chat.isGroup) return;
+    // Everything here is decided from the message object alone. The obvious
+    // call — message.getChat() — runs whatsapp-web.js's full chat serializer
+    // inside the page, and that serializer breaks whenever WhatsApp Web ships
+    // a chat property it doesn't know (Aug 2026: every call died with a
+    // minified `r`, so a paired, READY connection captured nothing). The event
+    // payload we already hold is enough to route the message.
+    const chatId = message.id.remote ?? message.from;
+
+    // Groups (@g.us) and direct chats (@c.us) are both in scope; status
+    // updates, broadcasts and channels are not.
+    const isGroup = chatId.endsWith('@g.us');
+    const isDirect = chatId.endsWith('@c.us');
+    if (!isGroup && !isDirect) return;
+
+    // The capture tag is the product's consent model: a chat is never swept —
+    // the sender opts a message in by writing the tag into it. Everything
+    // untagged stays on the phone and never reaches the server.
+    const tag = config.CAPTURE_TAG.toLowerCase();
+    if (!(message.body ?? '').toLowerCase().includes(tag)) return;
 
     const contact = await message.getContact().catch(() => null);
+    const notifyName = (message as unknown as { _data?: { notifyName?: string } })._data
+      ?.notifyName;
+    const senderLabel =
+      contact?.pushname || contact?.name || contact?.number || notifyName || null;
+
+    // A direct chat is named after the counterparty: the sender when the
+    // message came in, the dialled number when it was sent from this phone.
+    const chatName = isGroup
+      ? (this.groupNames.get(chatId) ?? 'Unnamed group')
+      : message.fromMe
+        ? chatId.split('@')[0]
+        : (senderLabel ?? chatId.split('@')[0]);
 
     const normalized: NormalizedMessage = {
       externalId: message.id._serialized,
-      groupExternalId: chat.id._serialized,
-      groupName: chat.name ?? 'Unnamed group',
+      groupExternalId: chatId,
+      groupName: chatName,
       senderId: message.author ?? message.from,
-      senderName: contact?.pushname || contact?.name || contact?.number || 'Unknown',
+      senderName: senderLabel ?? 'Unknown',
       senderPhone: contact?.number ? `+${contact.number}` : null,
       text: message.body ?? '',
       messageType: normalizeType(message.type),
@@ -261,6 +297,7 @@ export class WhatsAppWebProvider implements MessageProvider {
         hasMedia: message.hasMedia,
         deviceType: message.deviceType,
         isForwarded: message.isForwarded,
+        isDirect,
       },
     };
 
@@ -278,17 +315,93 @@ export class WhatsAppWebProvider implements MessageProvider {
       throw new Error('WhatsApp is not connected. Connect before discovering groups.');
     }
 
-    const chats = await this.client.getChats();
-    return chats
-      .filter((chat) => chat.isGroup)
-      .map((chat) => ({
-        externalId: chat.id._serialized,
-        name: chat.name ?? 'Unnamed group',
-        description: null,
-        participantCount:
-          (chat as unknown as { participants?: unknown[] }).participants?.length ?? 0,
-        isGroup: true,
-      }));
+    // Raw Store access instead of client.getChats(). getChats() serialises
+    // every chat through WWebJS.getChatModel, which throws (minified `r`) when
+    // WhatsApp Web ships chat properties the library doesn't know yet — the
+    // same breakage handleMessage works around. Reading the three fields we
+    // need straight off the models sidesteps the serialiser entirely, at the
+    // cost of touching WhatsApp's internals: if Store.Chat itself moves, this
+    // returns [] and group sync reports nothing rather than crashing.
+    // Typed structurally: the worker deliberately depends on neither puppeteer
+    // (it is whatsapp-web.js's transitive dependency) nor the DOM lib.
+    const page = (
+      this.client as unknown as {
+        pupPage?: { evaluate<T>(fn: () => T): Promise<T> };
+      }
+    ).pupPage;
+    if (!page) throw new Error('WhatsApp browser page is not available.');
+
+    type RawGroup = { id: string; name: string; participantCount: number };
+    type RawScan = { storeFound: boolean; totalChats: number; groups: RawGroup[] };
+    const scan = await page.evaluate((): RawScan => {
+      type ChatModel = {
+        id?: { _serialized?: string };
+        formattedTitle?: string;
+        name?: string;
+        groupMetadata?: {
+          participants?: { getModelsArray?: () => unknown[]; length?: number };
+        };
+      };
+      type Collection = { getModelsArray?: () => ChatModel[] };
+
+      // wwebjs 1.34 reaches chats through WhatsApp's own module loader
+      // (window.require('WAWebCollections')); window.Store died with the
+      // pre-1.30 injection. Try modern first, keep legacy as the fallback.
+      const g = globalThis as unknown as {
+        require?: (m: string) => { Chat?: Collection };
+        Store?: { Chat?: Collection };
+      };
+      let collection: Collection | null = null;
+      try {
+        collection = g.require?.('WAWebCollections')?.Chat ?? null;
+      } catch {
+        collection = null;
+      }
+      if (!collection?.getModelsArray) collection = g.Store?.Chat ?? null;
+
+      const models = collection?.getModelsArray?.() ?? [];
+      return {
+        // Distinguishes "account has no groups" from "WhatsApp moved the
+        // internals this code reads" — the two need opposite responses.
+        storeFound: Boolean(collection?.getModelsArray),
+        totalChats: models.length,
+        groups: models
+          // groupMetadata presence is how wwebjs itself classifies a group
+          // chat (getChatModel); the @g.us check excludes status/broadcast.
+          .filter((c) => c.groupMetadata && c.id?._serialized?.endsWith('@g.us'))
+          .map((c) => ({
+            id: c.id!._serialized!,
+            name: c.formattedTitle || c.name || 'Unnamed group',
+            participantCount:
+              c.groupMetadata?.participants?.getModelsArray?.()?.length ??
+              c.groupMetadata?.participants?.length ??
+              0,
+          })),
+      };
+    });
+
+    if (!scan.storeFound) {
+      log.warn('No chat collection found — WhatsApp Web internals have moved', {
+        connectionId: this.connectionId,
+      });
+    } else {
+      log.info('Chat store scanned', {
+        connectionId: this.connectionId,
+        totalChats: scan.totalChats,
+        groups: scan.groups.length,
+      });
+    }
+
+    const groups = scan.groups;
+    for (const group of groups) this.groupNames.set(group.id, group.name);
+
+    return groups.map((group) => ({
+      externalId: group.id,
+      name: group.name,
+      description: null,
+      participantCount: group.participantCount,
+      isGroup: true,
+    }));
   }
 
   async refreshQr(): Promise<void> {

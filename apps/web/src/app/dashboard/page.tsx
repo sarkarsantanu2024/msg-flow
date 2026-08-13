@@ -63,11 +63,6 @@ export default async function DashboardPage({
                     Connect WhatsApp <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline">
-                  <Link href="/dashboard/demo">
-                    <Sparkles className="h-4 w-4" /> Try Demo Mode
-                  </Link>
-                </Button>
               </div>
             }
           />
