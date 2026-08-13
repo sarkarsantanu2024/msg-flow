@@ -1,98 +1,72 @@
-# ============================================================
-# MsgFlow WhatsApp worker
+# MsgFlow WhatsApp worker.
 #
-# A persistent Node service running whatsapp-web.js + Puppeteer.
-# Deploy to Railway, Render, Fly.io, a VPS or any Docker host.
-# No Kubernetes required.
+# A persistent service, not a serverless function: whatsapp-web.js drives a
+# headless Chromium and holds a long-lived session that cannot survive being
+# frozen between invocations. This is why the worker cannot run on Vercel
+# alongside the web app.
 #
-# Build from the repository root:
 #   docker build -f docker/worker.Dockerfile -t msgflow-worker .
-# ============================================================
+#
+# Build context is the repository root, not this directory.
 
-FROM node:22-slim AS base
+FROM node:22-bookworm-slim
 
-# Chromium and the fonts it needs to render WhatsApp Web. Installing the
-# distribution package rather than letting Puppeteer download its own build
-# keeps the image smaller and the browser patched by apt.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-      fonts-liberation \
-      fonts-noto-color-emoji \
-      ca-certificates \
-      dumb-init \
-      libatk-bridge2.0-0 \
-      libatk1.0-0 \
-      libcups2 \
-      libdrm2 \
-      libgbm1 \
-      libnspr4 \
-      libnss3 \
-      libxcomposite1 \
-      libxdamage1 \
-      libxfixes3 \
-      libxkbcommon0 \
-      libxrandr2 \
-    && rm -rf /var/lib/apt/lists/*
-
+# Chromium from the distro rather than puppeteer's bundled download: the
+# packaged build carries the shared libraries it needs, which the downloaded one
+# does not on a slim image. PUPPETEER_SKIP_DOWNLOAD then saves ~150 MB and a
+# long install step, as pnpm-workspace.yaml documents.
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    PNPM_HOME=/pnpm \
-    PATH=/pnpm:$PATH
+    PUPPETEER_HEADLESS=true \
+    NODE_ENV=production \
+    WORKER_PORT=4000 \
+    WORKER_SESSION_PATH=/app/apps/worker/.sessions
 
-RUN corepack enable && corepack prepare pnpm@11.15.1 --activate
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      ca-certificates \
+      # WhatsApp Web renders contact names and QR codes; without a font set
+      # Chromium draws empty boxes and the QR fails to scan.
+      fonts-liberation \
+      fonts-noto-color-emoji \
+      dumb-init \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# ------------------------------------------------------------
-# Dependencies
-# ------------------------------------------------------------
-FROM base AS deps
+RUN corepack enable
 
+# Manifests first so `pnpm install` is cached until a dependency actually
+# changes. @msgflow/types re-exports Prisma's generated types, so packages/db is
+# pulled in transitively and its schema has to be present for the postinstall
+# `prisma generate` to succeed.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY apps/worker/package.json ./apps/worker/
-COPY packages/config/package.json ./packages/config/
-COPY packages/logger/package.json ./packages/logger/
-COPY packages/types/package.json ./packages/types/
-COPY packages/db/package.json ./packages/db/
+COPY apps/worker/package.json apps/worker/
+COPY packages/config/package.json packages/config/
+COPY packages/logger/package.json packages/logger/
+COPY packages/types/package.json packages/types/
+COPY packages/db/package.json packages/db/
+COPY packages/db/prisma packages/db/prisma
 
-# The worker needs only its own subtree — not the web app, connectors or AI SDKs.
-RUN pnpm install --frozen-lockfile \
-      --filter @msgflow/worker... \
-      --filter @msgflow/config \
-      --filter @msgflow/logger \
-      --filter @msgflow/types
+# Dev dependencies are kept: the worker runs its TypeScript sources through tsx
+# rather than compiling to JavaScript, so tsx must be present at runtime.
+RUN pnpm install --frozen-lockfile --filter @msgflow/worker...
 
-# ------------------------------------------------------------
-# Runtime
-# ------------------------------------------------------------
-FROM base AS runtime
+COPY apps/worker apps/worker
+COPY packages/config packages/config
+COPY packages/logger packages/logger
+COPY packages/types packages/types
+COPY packages/db packages/db
 
-ENV NODE_ENV=production
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
-
-COPY tsconfig.base.json ./
-COPY packages/config ./packages/config
-COPY packages/logger ./packages/logger
-COPY packages/types ./packages/types
-COPY apps/worker ./apps/worker
-
-# WhatsApp sessions must survive a restart, otherwise every deploy forces a
-# fresh QR scan. Mount a volume here in production.
+# Mount a volume here. Without one, every deploy discards the WhatsApp session
+# and forces a fresh QR scan.
 RUN mkdir -p /app/apps/worker/.sessions && chown -R node:node /app
 
 USER node
-
-ENV WORKER_PORT=4000 \
-    WORKER_SESSION_PATH=/app/apps/worker/.sessions \
-    PUPPETEER_HEADLESS=true
-
 EXPOSE 4000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.WORKER_PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-
-# dumb-init reaps the zombie Chromium processes Puppeteer leaves behind.
+# dumb-init reaps the Chromium processes puppeteer leaves behind; PID 1 in a
+# container does not do that on its own and the worker slowly fills with
+# zombies across reconnects.
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["pnpm", "--filter", "@msgflow/worker", "start"]
