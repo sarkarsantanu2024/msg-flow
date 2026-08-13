@@ -1,6 +1,28 @@
+import { fileURLToPath } from 'node:url';
+
+const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+
+  // This app lives in a pnpm workspace, so its dependencies resolve above
+  // apps/web. Without this, tracing treats apps/web as the root and refuses to
+  // copy anything outside it into the serverless bundle.
+  outputFileTracingRoot: workspaceRoot,
+
+  // Prisma's query engine is a native .node binary that file tracing does not
+  // discover: nothing `require`s it by a literal path, the client resolves it at
+  // runtime. Listing @prisma/client in serverExternalPackages keeps the JS out
+  // of the webpack bundle but does not carry the engine along, so the deployed
+  // function found .prisma/client and no engine inside it — every query then
+  // failed with "could not locate the Query Engine for runtime rhel-openssl-3.0.x".
+  // pnpm's store path is content-hashed, hence the glob.
+  outputFileTracingIncludes: {
+    '/**/*': [
+      '../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node',
+    ],
+  },
 
   // Workspace packages ship TypeScript source; Next compiles them with the app.
   transpilePackages: [

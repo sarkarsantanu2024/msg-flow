@@ -13,6 +13,12 @@
 
 generator client {
   provider = "prisma-client-js"
+
+  // "native" covers local development on any platform. The RHEL target is the
+  // Vercel serverless runtime: without it, a client generated anywhere other
+  // than the deployment container ships no engine Lambda can load, and every
+  // query fails with PrismaClientInitializationError at runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
