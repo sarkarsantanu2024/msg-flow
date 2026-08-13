@@ -21,6 +21,9 @@ packages/db/generated/
 # Query engine staged into the web app at build time — platform-specific binary
 apps/web/.prisma/
 
+# Local helper binaries (cloudflared etc.) — downloaded, never committed
+tools/
+
 # WhatsApp session data (never commit — contains auth credentials)
 .wwebjs_auth/
 .wwebjs_cache/

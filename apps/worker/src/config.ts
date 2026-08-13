@@ -25,6 +25,13 @@ const schema = z.object({
   WORKER_SESSION_PATH: z.string().default("./.sessions"),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
 
+  /**
+   * Opt-in capture marker. Only messages containing this tag (case-insensitive)
+   * are forwarded to the app — the sender decides what enters the pipeline by
+   * tagging it, so no chat is ever swept wholesale.
+   */
+  CAPTURE_TAG: z.string().default("@get"),
+
   PUPPETEER_HEADLESS: z
     .enum(["true", "false"])
     .default("true")

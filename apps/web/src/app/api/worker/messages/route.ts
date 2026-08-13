@@ -53,7 +53,6 @@ export const POST = route(async (request: Request) => {
     errors: [],
   };
 
-  // Only monitored groups enter the pipeline.
   const groupIds = [...new Set(payload.messages.map((m) => m.groupExternalId))];
   const groups = await prisma.whatsAppGroup.findMany({
     where: { connectionId: connection.id, externalId: { in: groupIds } },
@@ -63,7 +62,36 @@ export const POST = route(async (request: Request) => {
   const storedIds: string[] = [];
 
   for (const message of payload.messages) {
-    const group = groupByExternalId.get(message.groupExternalId);
+    let group = groupByExternalId.get(message.groupExternalId);
+
+    // A chat we have never seen is registered on its first message and starts
+    // monitored. The worker only forwards capture-tagged messages, so arrival
+    // here IS the user's opt-in — this is also the only way a direct (1-to-1)
+    // chat can appear, since group sync only discovers @g.us chats. A chat the
+    // user has explicitly un-monitored stays skipped: the toggle wins over
+    // the tag.
+    if (!group) {
+      try {
+        group = await prisma.whatsAppGroup.create({
+          data: {
+            tenantId: payload.tenantId,
+            connectionId: connection.id,
+            externalId: message.groupExternalId,
+            name: message.groupName || message.groupExternalId.split('@')[0],
+            isGroup: message.groupExternalId.endsWith('@g.us'),
+            isMonitored: true,
+          },
+        });
+      } catch {
+        // Unique (connectionId, externalId) race with a concurrent batch — the
+        // row exists now; use it.
+        group =
+          (await prisma.whatsAppGroup.findFirst({
+            where: { connectionId: connection.id, externalId: message.groupExternalId },
+          })) ?? undefined;
+      }
+      if (group) groupByExternalId.set(message.groupExternalId, group);
+    }
 
     if (!group || !group.isMonitored) {
       result.skipped++;

@@ -14,7 +14,6 @@ import {
   Plug,
   Settings,
   ShieldCheck,
-  Sparkles,
   Users,
   Workflow,
   CheckSquare,
@@ -51,7 +50,6 @@ const NAV_SECTIONS: Array<{
       { href: '/dashboard/automations', label: 'Automations', icon: Workflow },
       { href: '/dashboard/records', label: 'Extracted Data', icon: Database },
       { href: '/dashboard/review', label: 'Review Queue', icon: CheckSquare },
-      { href: '/dashboard/demo', label: 'Demo Mode', icon: Sparkles },
     ],
   },
   {
