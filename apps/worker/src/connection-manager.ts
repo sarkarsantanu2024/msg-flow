@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { createLogger, describeError } from '@msgflow/logger';
 import type { MessageProvider, NormalizedMessage } from '@msgflow/types';
+import { config } from './config.js';
 import { WhatsAppWebProvider } from './providers/whatsapp-web.js';
 import { reportConnectionState, sendMessages, syncGroups } from './api-client.js';
 
@@ -158,7 +161,51 @@ export class ConnectionManager {
 
   async connect(tenantId: string, connectionId: string): Promise<void> {
     const managed = this.getOrCreate(tenantId, connectionId);
+    this.remember(tenantId, connectionId);
     await managed.provider.connect();
+  }
+
+  /**
+   * Persist which connections this worker runs, so a restart resumes them.
+   *
+   * Without this, every process restart (deploy, crash, file-watch reload)
+   * silently stopped ALL capture until someone clicked Connect in the
+   * dashboard — a paired session on disk was sitting there unused while
+   * messages were being missed.
+   */
+  private registryPath(): string {
+    return path.join(config.WORKER_SESSION_PATH, 'connections.json');
+  }
+
+  private remember(tenantId: string, connectionId: string): void {
+    try {
+      const entries = this.readRegistry();
+      entries[connectionId] = tenantId;
+      fs.mkdirSync(config.WORKER_SESSION_PATH, { recursive: true });
+      fs.writeFileSync(this.registryPath(), JSON.stringify(entries, null, 2));
+    } catch (err) {
+      log.warn('Could not persist connection registry', describeError(err));
+    }
+  }
+
+  private readRegistry(): Record<string, string> {
+    try {
+      return JSON.parse(fs.readFileSync(this.registryPath(), 'utf8')) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  /** Called once at startup: resume every previously-running connection. */
+  async resumeAll(): Promise<void> {
+    const entries = Object.entries(this.readRegistry());
+    if (entries.length === 0) return;
+    log.info('Resuming connections from registry', { count: entries.length });
+    for (const [connectionId, tenantId] of entries) {
+      this.connect(tenantId, connectionId).catch((err) =>
+        log.error('Auto-resume failed', { connectionId, ...describeError(err) }),
+      );
+    }
   }
 
   async reconnect(tenantId: string, connectionId: string): Promise<void> {

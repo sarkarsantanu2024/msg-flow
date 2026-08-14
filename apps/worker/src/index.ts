@@ -215,6 +215,9 @@ const server = app.listen(config.WORKER_PORT, () => {
 });
 
 void heartbeat();
+// Resume WhatsApp sessions that were running before the last restart — a
+// restart must never silently stop capture.
+void connectionManager.resumeAll();
 const heartbeatTimer = setInterval(() => void heartbeat(), config.HEARTBEAT_INTERVAL_MS);
 const schedulerTimer = setInterval(() => void schedulerTick(), config.SCHEDULER_INTERVAL_MS);
 
