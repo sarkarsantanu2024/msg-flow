@@ -35,10 +35,15 @@ async function post<T>(path: string, body: unknown, attempts = 3): Promise<T> {
       const json = text ? JSON.parse(text) : null;
 
       if (!response.ok) {
-        // 4xx means we sent something wrong — retrying will not help.
+        // 4xx means we sent something wrong — retrying will not help. The
+        // error's `details` names the exact field that failed validation;
+        // without it a 422 is undiagnosable from the worker side.
         if (response.status >= 400 && response.status < 500) {
+          const errorBody = (json as { error?: { message?: string; details?: unknown; fields?: unknown } })?.error;
+          const detailSource = errorBody?.fields ?? errorBody?.details;
+          const details = detailSource ? ` ${JSON.stringify(detailSource).slice(0, 500)}` : '';
           throw new Error(
-            `HTTP ${response.status}: ${(json as { error?: { message?: string } })?.error?.message ?? text.slice(0, 200)}`,
+            `HTTP ${response.status}: ${errorBody?.message ?? text.slice(0, 200)}${details}`,
           );
         }
         throw Object.assign(new Error(`HTTP ${response.status}`), { retryable: true });

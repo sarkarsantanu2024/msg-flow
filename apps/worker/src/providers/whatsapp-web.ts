@@ -227,7 +227,12 @@ export class WhatsAppWebProvider implements MessageProvider {
         }
       });
 
-      client.on('message', (message: WwebMessage) => {
+      // 'message_create' rather than 'message': the latter silently excludes
+      // messages sent from the paired phone itself, and the account owner's
+      // own messages (rates given, orders confirmed) are half the business
+      // data. message_create fires for both directions; duplicates are
+      // impossible because ingest is unique on (tenantId, externalId).
+      client.on('message_create', (message: WwebMessage) => {
         void this.handleMessage(message).catch((err) =>
           log.error('Message handling failed', describeError(err)),
         );
@@ -286,8 +291,15 @@ export class WhatsAppWebProvider implements MessageProvider {
         ? chatId.split('@')[0]
         : (senderLabel ?? chatId.split('@')[0]);
 
+    // message_create events don't always carry a pre-serialised id, and a
+    // missing externalId fails the whole ingest batch. Compose WhatsApp's own
+    // serialisation format (fromMe_chat_id) when it is absent.
+    const rawId = message.id as { _serialized?: string; id?: string };
+    const externalId =
+      rawId?._serialized ?? `${message.fromMe}_${chatId}_${rawId?.id ?? `${message.timestamp}`}`;
+
     const normalized: NormalizedMessage = {
-      externalId: message.id._serialized,
+      externalId,
       groupExternalId: chatId,
       groupName: chatName,
       senderId: message.author ?? message.from,
@@ -295,8 +307,12 @@ export class WhatsAppWebProvider implements MessageProvider {
       senderPhone: contact?.number ? `+${contact.number}` : null,
       text: message.body ?? '',
       messageType: normalizeType(message.type),
-      // whatsapp-web.js reports seconds; the rest of the system uses ms.
-      timestamp: message.timestamp * 1_000,
+      // whatsapp-web.js reports seconds; the rest of the system uses ms. Some
+      // event subtypes carry no timestamp at all — NaN serialises to null and
+      // the whole ingest batch fails validation, so fall back to arrival time.
+      timestamp: Number.isFinite(message.timestamp) && message.timestamp > 0
+        ? message.timestamp * 1_000
+        : Date.now(),
       isFromMe: message.fromMe,
       quotedMessageId: message.hasQuotedMsg ? (message as unknown as { _data?: { quotedStanzaID?: string } })._data?.quotedStanzaID ?? null : null,
       metadata: {
