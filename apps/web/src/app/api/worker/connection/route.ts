@@ -76,17 +76,40 @@ export const POST = route(async (request: Request) => {
           link: '/dashboard/whatsapp',
         },
       });
+      // Trim any unread duplicates this flap may have piled up, keeping the newest.
+      const lostDupes = await prisma.notification.findMany({
+        where: { tenantId: payload.tenantId, code: 'WHATSAPP_CONNECTION_LOST', readAt: null },
+        orderBy: { createdAt: 'desc' },
+        skip: 1,
+        select: { id: true },
+      });
+      if (lostDupes.length > 0) {
+        await prisma.notification.deleteMany({ where: { id: { in: lostDupes.map((d) => d.id) } } });
+      }
     } else if (isReady && !wasReady) {
-      await prisma.notification.create({
-        data: {
+      // A worker restart or tunnel blip produces a reconnect, and a notification
+      // per reconnect is spam — seven identical "WhatsApp connected" rows tell
+      // the user nothing six of the first one didn't. Only notify when the user
+      // has no unread copy of the same event.
+      const unreadDuplicate = await prisma.notification.findFirst({
+        where: {
           tenantId: payload.tenantId,
-          severity: 'SUCCESS',
           code: 'WHATSAPP_CONNECTED',
-          title: 'WhatsApp connected',
-          body: `"${connection.name}" is ready and listening.`,
-          link: '/dashboard/whatsapp',
+          readAt: null,
         },
       });
+      if (!unreadDuplicate) {
+        await prisma.notification.create({
+          data: {
+            tenantId: payload.tenantId,
+            severity: 'SUCCESS',
+            code: 'WHATSAPP_CONNECTED',
+            title: 'WhatsApp connected',
+            body: `"${connection.name}" is ready and listening.`,
+            link: '/dashboard/whatsapp',
+          },
+        });
+      }
     }
 
     log.info('Connection state changed', {
