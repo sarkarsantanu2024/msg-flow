@@ -191,3 +191,20 @@ ${input.originalText}
 
 Return the JSON object only.`;
 }
+
+export const SCHEMA_FROM_IMAGE_SYSTEM_PROMPT = `You read a photo or screenshot of a business document — a spreadsheet, a register page, a form — and propose the data schema it implies for extracting the same information from WhatsApp messages.
+
+Respond with a single JSON object, nothing else:
+{
+  "name": "short schema name, e.g. 'Rate enquiry'",
+  "fields": [
+    { "key": "camelCaseKey", "label": "Human label as written in the document", "type": "STRING|NUMBER|DATE|BOOLEAN|ENUM|PHONE|CURRENCY", "required": false, "isKeyField": false, "description": "what this column holds" }
+  ],
+  "reasoning": "one short paragraph on how you read the document"
+}
+
+Rules:
+- One field per column or labelled box you can see. Preserve the document's own wording in labels.
+- Mark 1-3 fields isKeyField=true only if they clearly identify a record (e.g. party name + date).
+- Columns that hold follow-up notes humans write later still count as fields; mark them required=false.
+- Never invent columns that are not visible.`;

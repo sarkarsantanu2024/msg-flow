@@ -9,6 +9,8 @@ import type {
   ClassificationResult,
   ExtractionInput,
   ExtractionResult,
+  SchemaFromImageInput,
+  SchemaFromImageResult,
   ValidationInput,
   ValidationVerdict,
 } from '@msgflow/types';
@@ -99,5 +101,17 @@ export class OpenAIProvider implements AIProvider {
     const { text, meta } = await this.call(VALIDATION_SYSTEM_PROMPT, buildValidationPrompt(input), 2048);
     const parsed = parseJsonResponse<Record<string, unknown>>(text);
     return { data: coerceVerdict(parsed, normalizeConfidence(parsed.confidence)), meta };
+  }
+
+  async proposeSchemaFromImage(
+    _input: SchemaFromImageInput,
+  ): Promise<AiResponse<SchemaFromImageResult>> {
+    // Image-to-schema is implemented for the Anthropic provider (and mocked).
+    // Wire this provider's vision API here when it is needed; until then a
+    // clear error beats a silently wrong proposal.
+    throw new AppError(
+      'AI_NOT_CONFIGURED',
+      `Schema-from-image is not implemented for the ${this.name} provider yet. Set AI_PROVIDER=anthropic to use it.`,
+    );
   }
 }

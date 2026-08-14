@@ -5,6 +5,7 @@ import type {
   AutomationDraft,
   ClassificationResult,
   ExtractionResult,
+  SchemaFromImageResult,
   ValidationVerdict,
 } from '@msgflow/types';
 import { normalizeConfidence } from '../json.js';
@@ -185,4 +186,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function stripMeta(entry: Record<string, unknown>): Record<string, unknown> {
   const { confidence: _c, reasoning: _r, ...rest } = entry;
   return rest;
+}
+
+export function coerceSchemaProposal(raw: unknown): SchemaFromImageResult {
+  const obj = isPlainObject(raw) ? raw : {};
+  const fields = Array.isArray(obj.fields)
+    ? obj.fields
+        .filter(isPlainObject)
+        .map((f, index) => ({
+          key: sanitizeKey(String(f.key ?? `field${index + 1}`)),
+          label: String(f.label ?? f.key ?? `Field ${index + 1}`).slice(0, 80),
+          type: String(f.type ?? 'STRING').toUpperCase(),
+          required: Boolean(f.required),
+          isKeyField: Boolean(f.isKeyField),
+          description: typeof f.description === 'string' ? f.description.slice(0, 300) : undefined,
+          enumValues: Array.isArray(f.enumValues) ? f.enumValues.map(String) : undefined,
+        }))
+        .slice(0, 30)
+    : [];
+
+  return {
+    name: String(obj.name ?? 'Extracted Data').slice(0, 80),
+    fields,
+    reasoning: String(obj.reasoning ?? '').slice(0, 1000),
+  };
 }

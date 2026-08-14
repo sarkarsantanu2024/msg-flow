@@ -87,6 +87,47 @@ export function AutomationBuilder({
     { key: 'customerName', label: 'Customer', type: 'STRING', required: true, isKeyField: true },
   ]);
 
+  const [proposing, setProposing] = useState(false);
+
+  /** Photo of the user's existing sheet → proposed columns, editable below. */
+  async function proposeFromImage(file: File) {
+    setProposing(true);
+    try {
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(new Error('Could not read the file.'));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch('/api/schemas/propose', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          mediaType: file.type === 'image/png' ? 'image/png' : 'image/jpeg',
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message ?? 'The image could not be read.');
+      const proposal = body.data.proposal as {
+        name: string;
+        reasoning: string;
+        fields: FieldDraft[];
+      };
+      if (!proposal.fields?.length) throw new Error('No columns were recognised in the image.');
+      setSchemaName(proposal.name);
+      setFields(proposal.fields);
+      setAiReasoning(proposal.reasoning);
+      toast.success(`${proposal.fields.length} column(s) proposed`, {
+        description: 'Review and edit them below before creating the automation.',
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'The image could not be read.');
+    } finally {
+      setProposing(false);
+    }
+  }
+
   const [processingMode, setProcessingMode] = useState('REAL_TIME');
   const [dateRangeMode, setDateRangeMode] = useState('SINCE_LAST_SUCCESSFUL_RUN');
   const [scheduleHour, setScheduleHour] = useState(23);
@@ -361,6 +402,26 @@ export function AutomationBuilder({
                       onChange={(e) => setSchemaName(e.target.value)}
                       placeholder="Sales Enquiry"
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="schemaImage">Or start from a photo of your sheet</Label>
+                    <Input
+                      id="schemaImage"
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      disabled={proposing}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void proposeFromImage(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {proposing
+                        ? 'Reading the image…'
+                        : 'Upload a .jpg/.png of your current register or spreadsheet — the columns are proposed for you to edit. The image is not stored.'}
+                    </p>
                   </div>
 
                   <div>
