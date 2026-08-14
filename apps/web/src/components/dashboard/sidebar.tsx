@@ -3,12 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Activity,
-  BarChart3,
   Database,
   FileOutput,
   FileStack,
-  Gauge,
   LayoutDashboard,
   MessageSquare,
   Plug,
@@ -16,8 +13,6 @@ import {
   ShieldCheck,
   Users,
   Workflow,
-  CheckSquare,
-  CreditCard,
   Smartphone,
 } from '@/components/icon';
 import { cn } from '@/lib/utils';
@@ -33,7 +28,6 @@ const NAV_SECTIONS: Array<{
     label: 'Overview',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {
@@ -49,14 +43,12 @@ const NAV_SECTIONS: Array<{
     items: [
       { href: '/dashboard/automations', label: 'Automations', icon: Workflow },
       { href: '/dashboard/records', label: 'Extracted Data', icon: Database },
-      { href: '/dashboard/review', label: 'Review Queue', icon: CheckSquare },
     ],
   },
   {
     label: 'Deliver',
     items: [
       { href: '/dashboard/outputs', label: 'Outputs', icon: FileOutput },
-      { href: '/dashboard/runs', label: 'Workflow Runs', icon: Activity },
       { href: '/dashboard/exports', label: 'Exports', icon: FileStack },
       { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
     ],
@@ -64,9 +56,6 @@ const NAV_SECTIONS: Array<{
   {
     label: 'Workspace',
     items: [
-      { href: '/dashboard/team', label: 'Team', icon: Users },
-      { href: '/dashboard/usage', label: 'Usage', icon: Gauge },
-      { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
       { href: '/dashboard/settings', label: 'Settings', icon: Settings },
     ],
   },
@@ -117,7 +106,7 @@ export function Sidebar({
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.href === '/dashboard/review' && reviewCount > 0 ? (
+                      {item.href === '/dashboard/records' && reviewCount > 0 ? (
                         <Badge variant="warning" className="px-1.5 py-0 text-xs">
                           {reviewCount > 99 ? '99+' : reviewCount}
                         </Badge>
