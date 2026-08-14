@@ -90,6 +90,20 @@ export interface AutomationDraft {
   reasoning: string;
 }
 
+export interface SchemaFromImageInput {
+  /** Raw base64, no data: prefix. */
+  imageBase64: string;
+  mediaType: 'image/jpeg' | 'image/png';
+  /** Optional user hint, e.g. "this is our rate tracking sheet". */
+  hint?: string;
+}
+
+export interface SchemaFromImageResult {
+  name: string;
+  fields: ExtractionFieldSpec[];
+  reasoning: string;
+}
+
 export interface ValidationInput {
   data: Record<string, unknown>;
   fields: ExtractionFieldSpec[];
@@ -131,4 +145,10 @@ export interface AIProvider {
   extractStructuredData(input: ExtractionInput): Promise<AiResponse<ExtractionResult>>;
   generateAutomation(input: AutomationDraftInput): Promise<AiResponse<AutomationDraft>>;
   validateExtraction(input: ValidationInput): Promise<AiResponse<ValidationVerdict>>;
+  /**
+   * Read a photo/screenshot of an existing sheet or form and propose the
+   * column schema it implies. Vision-capable providers only — others throw,
+   * and the API surfaces that as a clear "switch provider" message.
+   */
+  proposeSchemaFromImage(input: SchemaFromImageInput): Promise<AiResponse<SchemaFromImageResult>>;
 }

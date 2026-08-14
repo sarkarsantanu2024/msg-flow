@@ -64,13 +64,15 @@ export const POST = route(async (request: Request) => {
   for (const message of payload.messages) {
     let group = groupByExternalId.get(message.groupExternalId);
 
-    // A chat we have never seen is registered on its first message and starts
-    // monitored. The worker only forwards capture-tagged messages, so arrival
-    // here IS the user's opt-in — this is also the only way a direct (1-to-1)
-    // chat can appear, since group sync only discovers @g.us chats. A chat the
-    // user has explicitly un-monitored stays skipped: the toggle wins over
-    // the tag.
+    // A chat we have never seen is registered on its first message — the only
+    // way a direct (1-to-1) chat can appear, since group sync only discovers
+    // @g.us chats. Whether it starts monitored depends on how it was captured:
+    // a tag-mode arrival is the sender's explicit opt-in and auto-monitors; a
+    // default-mode arrival merely makes the chat visible in the dashboard for
+    // the owner to toggle. Either way, the toggle wins from then on.
     if (!group) {
+      const optedIn =
+        (message.metadata as { capturedByTag?: boolean } | null)?.capturedByTag === true;
       try {
         group = await prisma.whatsAppGroup.create({
           data: {
@@ -79,7 +81,7 @@ export const POST = route(async (request: Request) => {
             externalId: message.groupExternalId,
             name: message.groupName || message.groupExternalId.split('@')[0],
             isGroup: message.groupExternalId.endsWith('@g.us'),
-            isMonitored: true,
+            isMonitored: optedIn,
           },
         });
       } catch {

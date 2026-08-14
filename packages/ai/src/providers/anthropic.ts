@@ -9,6 +9,8 @@ import type {
   ClassificationResult,
   ExtractionInput,
   ExtractionResult,
+  SchemaFromImageInput,
+  SchemaFromImageResult,
   ValidationInput,
   ValidationVerdict,
 } from '@msgflow/types';
@@ -18,13 +20,14 @@ import {
   AUTOMATION_SYSTEM_PROMPT,
   CLASSIFICATION_SYSTEM_PROMPT,
   EXTRACTION_SYSTEM_PROMPT,
+  SCHEMA_FROM_IMAGE_SYSTEM_PROMPT,
   VALIDATION_SYSTEM_PROMPT,
   buildAutomationPrompt,
   buildClassificationPrompt,
   buildExtractionPrompt,
   buildValidationPrompt,
 } from '../prompts.js';
-import { coerceClassification, coerceExtraction, coerceAutomationDraft, coerceVerdict } from './shared.js';
+import { coerceClassification, coerceExtraction, coerceAutomationDraft, coerceSchemaProposal, coerceVerdict } from './shared.js';
 
 export class AnthropicProvider implements AIProvider {
   readonly name = 'anthropic' as const;
@@ -100,5 +103,58 @@ export class AnthropicProvider implements AIProvider {
     const { text, meta } = await this.call(VALIDATION_SYSTEM_PROMPT, buildValidationPrompt(input), 2048);
     const parsed = parseJsonResponse<Record<string, unknown>>(text);
     return { data: coerceVerdict(parsed, normalizeConfidence(parsed.confidence)), meta };
+  }
+
+  async proposeSchemaFromImage(
+    input: SchemaFromImageInput,
+  ): Promise<AiResponse<SchemaFromImageResult>> {
+    if (!this.client) {
+      throw new AppError('AI_NOT_CONFIGURED', 'ANTHROPIC_API_KEY is not set.');
+    }
+    const started = Date.now();
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 2048,
+      system: SCHEMA_FROM_IMAGE_SYSTEM_PROMPT,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: input.mediaType,
+                data: input.imageBase64,
+              },
+            },
+            {
+              type: 'text',
+              text: input.hint
+                ? `The user says: "${input.hint}". Propose the extraction schema this document implies.`
+                : 'Propose the extraction schema this document implies.',
+            },
+          ],
+        },
+      ],
+    });
+    const text = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
+    return {
+      data: coerceSchemaProposal(parseJsonResponse(text)),
+      meta: {
+        provider: this.name,
+        model: this.model,
+        inputTokens,
+        outputTokens,
+        costUsd: estimateCostUsd(this.model, inputTokens, outputTokens),
+        durationMs: Date.now() - started,
+      },
+    };
   }
 }

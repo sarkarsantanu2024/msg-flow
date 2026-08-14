@@ -8,6 +8,8 @@ import type {
   ExtractionInput,
   ExtractionResult,
   ValidationInput,
+  SchemaFromImageInput,
+  SchemaFromImageResult,
   ValidationVerdict,
   AiCategory,
 } from '@msgflow/types';
@@ -497,6 +499,33 @@ export class MockProvider implements AIProvider {
     return {
       data: verdict,
       meta: meta(input.originalText, JSON.stringify(verdict), Date.now() - started),
+    };
+  }
+
+  async proposeSchemaFromImage(
+    input: SchemaFromImageInput,
+  ): Promise<AiResponse<SchemaFromImageResult>> {
+    const started = Date.now();
+    await delay();
+    // The mock cannot see. It returns a plausible business-tracking schema so
+    // the upload flow is demonstrable end-to-end without an API key, and says
+    // so in the reasoning rather than pretending it read the image.
+    const proposal: SchemaFromImageResult = {
+      name: 'Tracked enquiries',
+      fields: [
+        { key: 'date', label: 'Date', type: 'DATE', required: true, isKeyField: true },
+        { key: 'partyName', label: 'Party Name', type: 'STRING', required: true, isKeyField: true },
+        { key: 'productName', label: 'Product Name', type: 'STRING', required: true },
+        { key: 'quantity', label: 'Quantity', type: 'NUMBER', required: false },
+        { key: 'rate', label: 'Rate', type: 'CURRENCY', required: false },
+        { key: 'remarks', label: 'Remarks', type: 'STRING', required: false },
+      ] as SchemaFromImageResult['fields'],
+      reasoning:
+        'Mock provider: no vision available, so this is a generic enquiry-tracking schema. Configure a real AI provider to have the image actually read.',
+    };
+    return {
+      data: proposal,
+      meta: meta(input.hint ?? 'image', JSON.stringify(proposal), Date.now() - started),
     };
   }
 }

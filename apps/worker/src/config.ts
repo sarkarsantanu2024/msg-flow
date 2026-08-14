@@ -26,11 +26,15 @@ const schema = z.object({
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
 
   /**
-   * Opt-in capture marker. Only messages containing this tag (case-insensitive)
-   * are forwarded to the app — the sender decides what enters the pipeline by
-   * tagging it, so no chat is ever swept wholesale.
+   * Optional capture marker. Empty (the default) forwards every message from
+   * groups and direct chats — the dashboard's monitoring toggle then decides
+   * what is stored. Set to e.g. "@get" for workspaces that instead want
+   * senders to opt individual messages in; tagged arrivals auto-monitor their
+   * chat. Left off by default because real users proved unwilling to change
+   * how they type ("client said that user can not comfortable to send msg
+   * with @get word").
    */
-  CAPTURE_TAG: z.string().default("@get"),
+  CAPTURE_TAG: z.string().trim().default(""),
 
   PUPPETEER_HEADLESS: z
     .enum(["true", "false"])

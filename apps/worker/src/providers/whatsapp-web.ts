@@ -260,11 +260,17 @@ export class WhatsAppWebProvider implements MessageProvider {
     const isDirect = chatId.endsWith('@c.us');
     if (!isGroup && !isDirect) return;
 
-    // The capture tag is the product's consent model: a chat is never swept —
-    // the sender opts a message in by writing the tag into it. Everything
-    // untagged stays on the phone and never reaches the server.
+    // Two capture modes. Default: forward everything from groups and direct
+    // chats — the dashboard's per-chat monitoring toggle is the consent
+    // boundary, and unmonitored chats are discarded at ingest. Optional tag
+    // mode (CAPTURE_TAG set): only messages carrying the tag are forwarded,
+    // and a tagged arrival auto-monitors its chat. Tag mode is off by default
+    // because real users would not change how they type.
     const tag = config.CAPTURE_TAG.toLowerCase();
-    if (!(message.body ?? '').toLowerCase().includes(tag)) return;
+    const capturedByTag = tag.length > 0
+      ? (message.body ?? '').toLowerCase().includes(tag)
+      : false;
+    if (tag.length > 0 && !capturedByTag) return;
 
     const contact = await message.getContact().catch(() => null);
     const notifyName = (message as unknown as { _data?: { notifyName?: string } })._data
@@ -298,6 +304,7 @@ export class WhatsAppWebProvider implements MessageProvider {
         deviceType: message.deviceType,
         isForwarded: message.isForwarded,
         isDirect,
+        capturedByTag,
       },
     };
 

@@ -155,8 +155,14 @@ export const integrationSchema = z.object({
 
 export const exportRequestSchema = z.object({
   entity: z.enum(['messages', 'records', 'runs', 'analytics']),
-  format: z.enum(['xlsx', 'csv', 'pdf', 'pptx']),
+  format: z.enum(['xlsx', 'csv', 'pdf', 'pptx', 'docx']),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  /**
+   * Non-contiguous day selection ("the 10th and the 14th"), as YYYY-MM-DD
+   * strings. Mutually exclusive with from/to in spirit — when present it wins,
+   * because listing days is the more specific intent.
+   */
+  dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(31).optional(),
   filters: z.record(z.unknown()).default({}),
 });

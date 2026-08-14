@@ -32,7 +32,18 @@ export function ExportsPanel({ exports: rows, timezone }: { exports: ExportRow[]
   const [format, setFormat] = useState('xlsx');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  // Specific-days mode: a comma-separated list of picked dates. When any are
+  // picked they replace the from/to range — listing days is the more specific
+  // intent, and the API applies the same precedence.
+  const [dates, setDates] = useState<string[]>([]);
+  const [datePick, setDatePick] = useState('');
   const [busy, setBusy] = useState(false);
+
+  function addDate(value: string) {
+    if (!value) return;
+    setDates((prev) => (prev.includes(value) ? prev : [...prev, value].sort()));
+    setDatePick('');
+  }
 
   async function generate() {
     setBusy(true);
@@ -45,6 +56,7 @@ export function ExportsPanel({ exports: rows, timezone }: { exports: ExportRow[]
           format,
           from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
           to: to ? new Date(`${to}T23:59:59`).toISOString() : undefined,
+          dates: dates.length > 0 ? dates : undefined,
           filters: {},
         }),
       });
@@ -98,18 +110,45 @@ export function ExportsPanel({ exports: rows, timezone }: { exports: ExportRow[]
                 <SelectContent>
                   <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
                   <SelectItem value="csv">CSV</SelectItem>
-                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="pdf">PDF (A4)</SelectItem>
+                  <SelectItem value="docx">Word (.docx, A4)</SelectItem>
                   <SelectItem value="pptx">PowerPoint</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="export-from">From</Label>
-              <Input id="export-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input id="export-from" type="date" value={from} disabled={dates.length > 0} onChange={(e) => setFrom(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="export-to">To</Label>
-              <Input id="export-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <Input id="export-to" type="date" value={to} disabled={dates.length > 0} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="export-days">Specific days</Label>
+              <Input
+                id="export-days"
+                type="date"
+                value={datePick}
+                onChange={(e) => addDate(e.target.value)}
+              />
+              {dates.length > 0 ? (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {dates.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className="rounded-full bg-muted px-2 py-0.5 text-xs hover:bg-destructive/10"
+                      title="Remove this day"
+                      onClick={() => setDates((prev) => prev.filter((x) => x !== d))}
+                    >
+                      {d} ×
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Pick one or more days instead of a range.</p>
+              )}
             </div>
             <div className="flex items-end">
               <Button onClick={generate} loading={busy} className="w-full">

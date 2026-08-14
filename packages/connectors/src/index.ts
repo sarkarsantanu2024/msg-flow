@@ -8,3 +8,4 @@ export * from './webhook.js';
 export * from './rest-api.js';
 export * from './pdf.js';
 export * from './pptx.js';
+export * from './docx.js';

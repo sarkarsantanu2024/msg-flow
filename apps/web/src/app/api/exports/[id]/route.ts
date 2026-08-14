@@ -12,6 +12,7 @@ const MIME: Record<string, string> = {
   csv: 'text/csv',
   pdf: 'application/pdf',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
