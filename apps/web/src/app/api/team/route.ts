@@ -9,11 +9,31 @@ import { requirePermission, requestMeta } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/**
+ * Pick a free username for someone invited by email.
+ *
+ * Invitations still identify people by address, but sign-in is by username, so
+ * one has to be minted for them. The email local-part is the name they will
+ * expect; a numeric suffix resolves the case where two addresses at different
+ * domains reduce to the same handle.
+ */
+async function deriveUsername(email: string): Promise<string> {
+  const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 24) || 'member';
+
+  for (let suffix = 0; suffix < 100; suffix++) {
+    const candidate = suffix === 0 ? base : `${base}${suffix}`;
+    if (!(await prisma.user.findUnique({ where: { username: candidate }, select: { id: true } }))) {
+      return candidate;
+    }
+  }
+  return `${base}${randomBytes(3).toString('hex')}`;
+}
+
 export const GET = route(async () => {
   const context = await requirePermission('tenant:read');
   const members = await prisma.membership.findMany({
     where: { tenantId: context.tenantId },
-    include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
+    include: { user: { select: { id: true, name: true, username: true, email: true, lastLoginAt: true } } },
     orderBy: { createdAt: 'asc' },
   });
   return ok(members);
@@ -60,6 +80,7 @@ export const POST = route(async (request: Request) => {
 
   const user = await prisma.user.create({
     data: {
+      username: await deriveUsername(input.email),
       email: input.email,
       name: input.name ?? input.email.split('@')[0],
       passwordHash: await bcrypt.hash(temporaryPassword, 12),

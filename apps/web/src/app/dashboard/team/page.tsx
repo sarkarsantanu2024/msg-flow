@@ -12,7 +12,7 @@ export default async function TeamPage() {
 
   const members = await prisma.membership.findMany({
     where: { tenantId: context.tenantId },
-    include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
+    include: { user: { select: { id: true, name: true, username: true, email: true, lastLoginAt: true } } },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -29,7 +29,8 @@ export default async function TeamPage() {
         members={members.map((m) => ({
           id: m.id,
           userId: m.userId,
-          name: m.user.name ?? m.user.email,
+          name: m.user.name ?? m.user.username,
+          username: m.user.username,
           email: m.user.email,
           role: m.role,
           lastLoginAt: m.user.lastLoginAt?.toISOString() ?? null,

@@ -32,7 +32,8 @@ interface Member {
   id: string;
   userId: string;
   name: string;
-  email: string;
+  username: string;
+  email: string | null;
   role: string;
   lastLoginAt: string | null;
   joinedAt: string;
@@ -152,7 +153,10 @@ export function TeamTable({
                         </Badge>
                       ) : null}
                     </div>
-                    <div className="text-xs text-muted-foreground">{member.email}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {member.username}
+                      {member.email ? ` · ${member.email}` : ''}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {canManage && member.userId !== currentUserId ? (
@@ -216,7 +220,7 @@ export function TeamTable({
           <DialogHeader>
             <DialogTitle>Add a team member</DialogTitle>
             <DialogDescription>
-              MsgFlow accounts use an email and password you control — no third-party sign-in.
+              MsgFlow accounts use a username and password you control — no third-party sign-in.
             </DialogDescription>
           </DialogHeader>
 

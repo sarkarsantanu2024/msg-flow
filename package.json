@@ -2,7 +2,7 @@
   "name": "msgflow",
   "version": "1.0.0",
   "private": true,
-  "description": "MsgFlow — Turn Messages Into Business Data.",
+  "description": "MsgFlow \u2014 Turn Messages Into Business Data.",
   "packageManager": "pnpm@11.15.1",
   "engines": {
     "node": ">=20.0.0"
@@ -23,7 +23,8 @@
     "db:migrate": "pnpm --filter @msgflow/db migrate",
     "db:seed": "pnpm --filter @msgflow/db seed",
     "db:studio": "pnpm --filter @msgflow/db studio",
-    "validate": "pnpm db:generate && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "validate": "pnpm db:generate && pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "demo:seed": "pnpm --filter @msgflow/web demo:seed"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

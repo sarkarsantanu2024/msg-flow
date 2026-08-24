@@ -47,7 +47,9 @@ enum TenantStatus {
 
 model User {
   id           String    @id @default(cuid())
-  email        String    @unique
+  /// Sign-in identifier. Email is optional and only used for password reset.
+  username     String    @unique
+  email        String?   @unique
   name         String?
   passwordHash String
   /// Platform-level super admin (access to /admin), distinct from tenant Role.
@@ -66,6 +68,7 @@ model User {
   auditLogs     AuditLog[]
   notifications Notification[]
 
+  @@index([username])
   @@index([email])
 }
 

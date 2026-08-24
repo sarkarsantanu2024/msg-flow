@@ -83,6 +83,19 @@ export interface TenantMembershipInfo {
   tenantStatus: string;
   timezone: string;
   role: Role;
+  /** Whether demo data is currently included in this workspace's views. */
+  demoMode: boolean;
+}
+
+/**
+ * Read the demo-data switch off the tenant's settings blob.
+ *
+ * Absent means off: a workspace that has never been told otherwise should show
+ * only real data, so a missing setting can never leak demo rows into a live view.
+ */
+export function readDemoMode(settings: unknown): boolean {
+  if (!settings || typeof settings !== 'object') return false;
+  return (settings as { demoMode?: unknown }).demoMode === true;
 }
 
 /** All tenants a user belongs to, for the tenant switcher. */
@@ -99,6 +112,7 @@ export async function getUserMemberships(userId: string): Promise<TenantMembersh
     tenantStatus: m.tenant.status,
     timezone: m.tenant.timezone,
     role: m.role,
+    demoMode: readDemoMode(m.tenant.settings),
   }));
 }
 
@@ -119,6 +133,7 @@ export async function getMembership(userId: string, tenantId: string): Promise<T
     tenantStatus: membership.tenant.status,
     timezone: membership.tenant.timezone,
     role: membership.role,
+    demoMode: readDemoMode(membership.tenant.settings),
   };
 }
 

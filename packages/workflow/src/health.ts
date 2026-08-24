@@ -64,7 +64,7 @@ export async function getSystemHealth(tenantId?: string): Promise<SystemHealth> 
         ? `${liveWorkers.length} worker(s) online`
         : workers.length > 0
           ? 'No heartbeat received recently — the worker process may have stopped'
-          : 'No worker has ever registered. Start it with `pnpm worker:dev`.',
+          : 'The WhatsApp service has not come online yet',
   });
 
   // --- WhatsApp ---

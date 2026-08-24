@@ -1,4 +1,11 @@
 import { WORKER_STALE_MS } from '@msgflow/config';
+import {
+  automationDemoFilter,
+  classificationDemoFilter,
+  messageDemoFilter,
+  recordDemoFilter,
+  workflowRunDemoFilter,
+} from './demo';
 import { prisma } from '@msgflow/db';
 import { getSystemHealth, resolvePreset, startOfLocalDay } from '@msgflow/workflow';
 import type { SystemHealth, WhatsAppStatusSummary } from '@msgflow/types';
@@ -110,7 +117,13 @@ export async function getDashboardMetrics(
   tenantId: string,
   start: Date,
   end: Date,
+  demoMode = true,
 ): Promise<DashboardMetrics> {
+  const messageFilter = messageDemoFilter(demoMode);
+  const recordFilter = recordDemoFilter(demoMode);
+  const classFilter = classificationDemoFilter(demoMode);
+  const runFilter = workflowRunDemoFilter(demoMode);
+
   const [
     messages,
     important,
@@ -121,21 +134,35 @@ export async function getDashboardMetrics(
     workflowSuccess,
     workflowFailed,
   ] = await Promise.all([
-    prisma.message.count({ where: { tenantId, timestamp: { gte: start, lt: end } } }),
+    prisma.message.count({ where: { tenantId, timestamp: { gte: start, lt: end }, ...messageFilter } }),
     prisma.messageClassification.count({
-      where: { tenantId, importance: { in: ['HIGH', 'MEDIUM'] }, createdAt: { gte: start, lt: end } },
+      where: {
+        tenantId,
+        importance: { in: ['HIGH', 'MEDIUM'] },
+        createdAt: { gte: start, lt: end },
+        ...classFilter,
+      },
     }),
-    prisma.message.count({ where: { tenantId, status: 'EXTRACTED', timestamp: { gte: start, lt: end } } }),
-    prisma.extractedRecord.count({ where: { tenantId, createdAt: { gte: start, lt: end } } }),
-    prisma.extractedRecord.count({ where: { tenantId, status: 'NEEDS_REVIEW' } }),
+    prisma.message.count({
+      where: { tenantId, status: 'EXTRACTED', timestamp: { gte: start, lt: end }, ...messageFilter },
+    }),
+    prisma.extractedRecord.count({ where: { tenantId, createdAt: { gte: start, lt: end }, ...recordFilter } }),
+    prisma.extractedRecord.count({ where: { tenantId, status: 'NEEDS_REVIEW', ...recordFilter } }),
     prisma.workflowRun.aggregate({
-      where: { tenantId, queuedAt: { gte: start, lt: end } },
+      where: { tenantId, queuedAt: { gte: start, lt: end }, ...runFilter },
       _sum: { recordsUpdated: true, recordsSkipped: true, recordsFailed: true },
     }),
     prisma.workflowRun.count({
-      where: { tenantId, status: { in: ['SUCCESS', 'PARTIAL_SUCCESS'] }, queuedAt: { gte: start, lt: end } },
+      where: {
+        tenantId,
+        status: { in: ['SUCCESS', 'PARTIAL_SUCCESS'] },
+        queuedAt: { gte: start, lt: end },
+        ...runFilter,
+      },
     }),
-    prisma.workflowRun.count({ where: { tenantId, status: 'FAILED', queuedAt: { gte: start, lt: end } } }),
+    prisma.workflowRun.count({
+      where: { tenantId, status: 'FAILED', queuedAt: { gte: start, lt: end }, ...runFilter },
+    }),
   ]);
 
   return {
@@ -163,25 +190,31 @@ export async function getTimeSeries(
   start: Date,
   end: Date,
   timezone: string,
+  demoMode = true,
 ): Promise<Array<{ date: string; label: string; messages: number; important: number; records: number; runs: number }>> {
   const { enumerateDays } = await import('@msgflow/workflow');
   const buckets = enumerateDays(start, end, timezone);
 
   const [messages, classifications, records, runs] = await Promise.all([
     prisma.message.findMany({
-      where: { tenantId, timestamp: { gte: start, lt: end } },
+      where: { tenantId, timestamp: { gte: start, lt: end }, ...messageDemoFilter(demoMode) },
       select: { timestamp: true },
     }),
     prisma.messageClassification.findMany({
-      where: { tenantId, importance: { in: ['HIGH', 'MEDIUM'] }, createdAt: { gte: start, lt: end } },
+      where: {
+        tenantId,
+        importance: { in: ['HIGH', 'MEDIUM'] },
+        createdAt: { gte: start, lt: end },
+        ...classificationDemoFilter(demoMode),
+      },
       select: { createdAt: true },
     }),
     prisma.extractedRecord.findMany({
-      where: { tenantId, createdAt: { gte: start, lt: end } },
+      where: { tenantId, createdAt: { gte: start, lt: end }, ...recordDemoFilter(demoMode) },
       select: { createdAt: true },
     }),
     prisma.workflowRun.findMany({
-      where: { tenantId, queuedAt: { gte: start, lt: end } },
+      where: { tenantId, queuedAt: { gte: start, lt: end }, ...workflowRunDemoFilter(demoMode) },
       select: { queuedAt: true },
     }),
   ]);
@@ -210,19 +243,19 @@ export async function getTimeSeries(
   }));
 }
 
-export async function getCategoryBreakdown(tenantId: string, start: Date, end: Date) {
+export async function getCategoryBreakdown(tenantId: string, start: Date, end: Date, demoMode = true) {
   const rows = await prisma.messageClassification.groupBy({
     by: ['category'],
-    where: { tenantId, createdAt: { gte: start, lt: end } },
+    where: { tenantId, createdAt: { gte: start, lt: end }, ...classificationDemoFilter(demoMode) },
     _count: { category: true },
     orderBy: { _count: { category: 'desc' } },
   });
   return rows.map((r) => ({ category: r.category, count: r._count.category }));
 }
 
-export async function getAutomationHealth(tenantId: string) {
+export async function getAutomationHealth(tenantId: string, demoMode = true) {
   const automations = await prisma.automation.findMany({
-    where: { tenantId, status: { not: 'ARCHIVED' } },
+    where: { tenantId, status: { not: 'ARCHIVED' }, ...automationDemoFilter(demoMode) },
     orderBy: [{ status: 'asc' }, { name: 'asc' }],
     include: {
       runs: { orderBy: { queuedAt: 'desc' }, take: 20, select: { status: true, recordsCreated: true, recordsUpdated: true, recordsSkipped: true, messagesProcessed: true } },
@@ -252,9 +285,9 @@ export async function getAutomationHealth(tenantId: string) {
   }));
 }
 
-export async function getRecentActivity(tenantId: string, take = 8) {
+export async function getRecentActivity(tenantId: string, take = 8, demoMode = true) {
   const runs = await prisma.workflowRun.findMany({
-    where: { tenantId },
+    where: { tenantId, ...workflowRunDemoFilter(demoMode) },
     orderBy: { queuedAt: 'desc' },
     take,
     include: { automation: { select: { name: true } }, output: { select: { name: true } } },

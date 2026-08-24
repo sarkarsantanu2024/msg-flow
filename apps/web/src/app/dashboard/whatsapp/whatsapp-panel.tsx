@@ -303,7 +303,7 @@ export function WhatsAppPanel({
             ) : (
               <EmptyState
                 title="No worker has registered"
-                description="Start it locally with `pnpm worker:dev`, or deploy it to Railway, Render, Fly.io or any Docker host. The web app cannot run WhatsApp Web itself."
+                description="The WhatsApp service has not come online yet. Message capture starts as soon as it does."
               />
             )}
           </CardContent>

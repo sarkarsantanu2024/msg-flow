@@ -8,12 +8,13 @@ import { createLogger } from '@msgflow/logger';
 const log = createLogger('auth');
 
 /**
- * Authentication — email and password only.
+ * Authentication — username and password only.
  *
  * No social or Google sign-in: accounts are created directly in MsgFlow with a
- * username (email) and password the user chooses. Google credentials elsewhere
- * in the configuration exist solely for the optional Google Sheets *data*
- * connector and are never involved in signing in.
+ * username and password the user chooses. Email is optional and exists only so
+ * a password reset has somewhere to go. Google credentials elsewhere in the
+ * configuration exist solely for the optional Google Sheets *data* connector
+ * and are never involved in signing in.
  *
  * JWT sessions rather than database sessions so that a page render does not
  * cost a session lookup; membership and role are still verified against the
@@ -24,13 +25,15 @@ declare module 'next-auth' {
   interface Session {
     user: {
       id: string;
-      email: string;
+      username: string;
+      email?: string | null;
       name?: string | null;
       isSuperAdmin: boolean;
     };
   }
   interface User {
     id?: string;
+    username?: string;
     isSuperAdmin?: boolean;
   }
 }
@@ -47,18 +50,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   providers: [
     Credentials({
-      name: 'Email and password',
+      name: 'Username and password',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(raw) {
         const parsed = loginSchema.safeParse(raw);
         if (!parsed.success) return null;
 
-        const { email, password } = parsed.data;
+        const { username, password } = parsed.data;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({ where: { username } });
 
         // Compare against a dummy hash when the user does not exist so that a
         // missing account and a wrong password take the same time. Otherwise
@@ -67,7 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, hash);
 
         if (!user || !valid) {
-          log.warn('Failed login attempt', { email });
+          log.warn('Failed login attempt', { username });
           return null;
         }
 
@@ -92,6 +95,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         return {
           id: user.id,
+          username: user.username,
           email: user.email,
           name: user.name,
           isSuperAdmin: user.isSuperAdmin,
@@ -103,6 +107,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.sub = user.id ?? token.sub;
+        token.username = user.username;
         token.isSuperAdmin = user.isSuperAdmin ?? false;
       }
       return token;
@@ -113,7 +118,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user = {
         ...session.user,
         id: (token.sub as string) ?? '',
-        email: (token.email as string) ?? '',
+        username: (token.username as string) ?? '',
+        email: (token.email as string) ?? null,
         name: (token.name as string) ?? null,
         isSuperAdmin: Boolean(token.isSuperAdmin),
       };

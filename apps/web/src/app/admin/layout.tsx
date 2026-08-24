@@ -34,7 +34,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">{context.email}</span>
+            <span className="hidden text-sm text-muted-foreground sm:inline">{context.username}</span>
             <Button asChild variant="outline" size="sm">
               <Link href="/dashboard">
                 <ArrowLeft className="h-4 w-4" /> Back to workspace

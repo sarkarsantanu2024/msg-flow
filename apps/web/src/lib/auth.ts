@@ -10,6 +10,7 @@ import {
   type TenantMembershipInfo,
 } from '@msgflow/db';
 import { AppError } from '@msgflow/types';
+import type { Session } from 'next-auth';
 import { auth } from '@/auth';
 
 /**
@@ -26,7 +27,8 @@ export const TENANT_COOKIE = 'mf_tenant';
 
 export interface AuthContext {
   userId: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string | null;
   isSuperAdmin: boolean;
 }
@@ -38,16 +40,30 @@ export interface TenantContext extends AuthContext {
   tenantStatus: string;
   timezone: string;
   role: Role;
+  /** Whether demo data is included in this workspace's views. */
+  demoMode: boolean;
   memberships: TenantMembershipInfo[];
 }
 
 /** Signed-in user, or null. */
 export async function getAuth(): Promise<AuthContext | null> {
-  const session = await auth();
+  // A session cookie that cannot be decrypted — left over from a previous
+  // AUTH_SECRET, or truncated — makes auth() throw JWTSessionError. That is a
+  // signed-out browser, not a server fault, so it must not surface as a 500 on
+  // an otherwise public page. Middleware clears the cookie on the way out.
+  // Typed as Session rather than via ReturnType: auth() is overloaded, and the
+  // inferred return picks the route-handler wrapper overload, not the session.
+  let session: Session | null;
+  try {
+    session = await auth();
+  } catch {
+    return null;
+  }
   if (!session?.user?.id) return null;
   return {
     userId: session.user.id,
-    email: session.user.email,
+    username: session.user.username,
+    email: session.user.email ?? null,
     name: session.user.name ?? null,
     isSuperAdmin: session.user.isSuperAdmin,
   };
@@ -84,7 +100,8 @@ async function resolveTenant(userId: string): Promise<TenantContext | null> {
 
   return {
     userId,
-    email: '',
+    username: '',
+    email: null,
     name: null,
     isSuperAdmin: false,
     tenantId: membership.tenantId,
@@ -93,6 +110,7 @@ async function resolveTenant(userId: string): Promise<TenantContext | null> {
     tenantStatus: membership.tenantStatus,
     timezone: membership.timezone,
     role: membership.role,
+    demoMode: membership.demoMode,
     memberships,
   };
 }

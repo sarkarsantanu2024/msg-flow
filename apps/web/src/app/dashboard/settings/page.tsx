@@ -129,7 +129,7 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p>
-                MsgFlow uses email and password only. Accounts are created directly here — there is no Google or
+                MsgFlow uses username and password only. Accounts are created directly here — there is no Google or
                 other third-party sign-in.
               </p>
               <p className="text-xs text-muted-foreground">

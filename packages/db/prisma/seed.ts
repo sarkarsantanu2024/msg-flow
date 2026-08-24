@@ -14,6 +14,7 @@ import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const DEMO_USERNAME = "demo";
 const DEMO_EMAIL = "demo@msgflow.app";
 const DEMO_PASSWORD = "msgflow-demo-2026";
 
@@ -152,8 +153,9 @@ async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
 
   const owner = await prisma.user.upsert({
-    where: { email: DEMO_EMAIL },
+    where: { username: DEMO_USERNAME },
     create: {
+      username: DEMO_USERNAME,
       email: DEMO_EMAIL,
       name: "Demo Owner",
       passwordHash,
@@ -164,8 +166,9 @@ async function main() {
   });
 
   const operator = await prisma.user.upsert({
-    where: { email: "operator@msgflow.app" },
+    where: { username: "operator" },
     create: {
+      username: "operator",
       email: "operator@msgflow.app",
       name: "Priya Operator",
       passwordHash,
@@ -1236,7 +1239,7 @@ async function main() {
   console.log("\n─────────────────────────────────────────────");
   console.log("Seed complete.\n");
   console.log("  Sign in at https://msg-flow.vercel.app/login");
-  console.log(`  Email:    ${DEMO_EMAIL}`);
+  console.log(`  Username: ${DEMO_USERNAME}`);
   console.log(`  Password: ${DEMO_PASSWORD}`);
   console.log(`\n  Operator account: operator@msgflow.app (same password)`);
   console.log("  The owner account is also a platform super admin (/admin).");

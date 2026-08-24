@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { prisma } from '@msgflow/db';
 import { requireTenant } from '@/lib/auth';
+import { groupDemoFilter } from '@/lib/demo';
 import { PageHeader, StatTile } from '@/components/dashboard/page-header';
 import { GroupsTable } from './groups-table';
 import { Card } from '@/components/ui/card';
@@ -15,7 +16,7 @@ export default async function GroupsPage() {
   const context = await requireTenant();
 
   const groups = await prisma.whatsAppGroup.findMany({
-    where: { tenantId: context.tenantId },
+    where: { tenantId: context.tenantId, ...groupDemoFilter(context.demoMode) },
     orderBy: [{ isMonitored: 'desc' }, { lastMessageAt: 'desc' }, { name: 'asc' }],
     include: {
       _count: { select: { messages: true, triggers: true } },

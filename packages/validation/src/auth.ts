@@ -3,6 +3,21 @@ import { z } from 'zod';
 export const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email address');
 
 /**
+ * Sign-in identifier. Lower-cased on the way in so that "Santanu" and "santanu"
+ * are the same account rather than two accounts nobody can tell apart. The
+ * character set is deliberately narrow — anything that could be mistaken for an
+ * email address, or that renders ambiguously, is rejected at the edge.
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, 'Use at least 3 characters')
+  .max(30, 'Use at most 30 characters')
+  .regex(/^[a-z0-9._-]+$/, 'Use letters, numbers, dots, underscores or hyphens only')
+  .regex(/^[a-z0-9]/, 'Start with a letter or number');
+
+/**
  * Password policy: length over composition rules. A 10-character passphrase
  * beats "P@ssw0rd" and users actually comply with it.
  */
@@ -13,7 +28,7 @@ export const passwordSchema = z
 
 export const signupSchema = z.object({
   name: z.string().trim().min(2, 'Enter your name').max(100),
-  email: emailSchema,
+  username: usernameSchema,
   password: passwordSchema,
   organizationName: z.string().trim().min(2, 'Enter your organization name').max(100),
   timezone: z.string().default('Asia/Kolkata'),
@@ -21,7 +36,7 @@ export const signupSchema = z.object({
 export type SignupInput = z.infer<typeof signupSchema>;
 
 export const loginSchema = z.object({
-  email: emailSchema,
+  username: usernameSchema,
   password: z.string().min(1, 'Enter your password'),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

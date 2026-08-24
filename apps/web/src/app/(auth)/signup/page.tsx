@@ -9,7 +9,7 @@ export default function SignupPage() {
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Choose your own email and password. No third-party sign-in required.
+        Choose your own username and password. No third-party sign-in required.
       </p>
 
       <SignupForm />

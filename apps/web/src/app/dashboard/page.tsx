@@ -12,6 +12,7 @@ import {
 } from '@/lib/queries';
 import { PageHeader, StatTile } from '@/components/dashboard/page-header';
 import { DateFilter } from '@/components/dashboard/date-filter';
+import { DemoToggle } from '@/components/dashboard/demo-toggle';
 import { parseDateParams } from '@/lib/date-params';
 import { TrendChart, BarsChart } from '@/components/charts';
 import { StatusBadge } from '@/components/status-badge';
@@ -34,20 +35,26 @@ export default async function DashboardPage({
   const range = resolvePreset(preset, context.timezone, new Date(), { from, to });
 
   const [metrics, series, automations, activity] = await Promise.all([
-    getDashboardMetrics(context.tenantId, range.start, range.end),
-    getTimeSeries(context.tenantId, range.start, range.end, context.timezone),
-    getAutomationHealth(context.tenantId),
-    getRecentActivity(context.tenantId),
+    getDashboardMetrics(context.tenantId, range.start, range.end, context.demoMode),
+    getTimeSeries(context.tenantId, range.start, range.end, context.timezone, context.demoMode),
+    getAutomationHealth(context.tenantId, context.demoMode),
+    getRecentActivity(context.tenantId, 8, context.demoMode),
   ]);
 
   const isEmpty = metrics.messages === 0 && automations.length === 0;
+  const canManage = ['OWNER', 'ADMIN'].includes(context.role);
 
   return (
     <div>
       <PageHeader
         title={`Welcome back${context.name ? `, ${context.name.split(' ')[0]}` : ''}`}
         description={`${range.label} · ${context.tenantName}`}
-        actions={<DateFilter compact />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage ? <DemoToggle enabled={context.demoMode} /> : null}
+            <DateFilter compact />
+          </div>
+        }
       />
 
       {isEmpty ? (

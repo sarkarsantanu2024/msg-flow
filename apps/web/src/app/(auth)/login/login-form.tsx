@@ -13,7 +13,7 @@ export function LoginForm({ callbackUrl, initialError }: { callbackUrl: string; 
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
-    initialError ? 'That email and password combination is not recognised.' : null,
+    initialError ? 'That username and password combination is not recognised.' : null,
   );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -25,14 +25,14 @@ export function LoginForm({ callbackUrl, initialError }: { callbackUrl: string; 
 
     try {
       const result = await signIn('credentials', {
-        email: String(formData.get('email') ?? ''),
+        username: String(formData.get('username') ?? '').trim().toLowerCase(),
         password: String(formData.get('password') ?? ''),
         redirect: false,
       });
 
       if (!result || result.error) {
         // Deliberately identical for "no such user" and "wrong password".
-        setError('That email and password combination is not recognised.');
+        setError('That username and password combination is not recognised.');
         setLoading(false);
         return;
       }
@@ -58,14 +58,14 @@ export function LoginForm({ callbackUrl, initialError }: { callbackUrl: string; 
       ) : null}
 
       <div className="space-y-1.5">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="username">Username</Label>
         <Input
-          id="email"
-          name="email"
-          type="email"
+          id="username"
+          name="username"
+          type="text"
           autoComplete="username"
           required
-          placeholder="you@company.com"
+          placeholder="santanu"
           disabled={loading}
         />
       </div>

@@ -136,15 +136,20 @@ describe('auth schemas', () => {
   it('requires a password of at least 10 characters', () => {
     expect(signupSchema.safeParse({
       name: 'Test User',
-      email: 'test@example.com',
+      username: 'testuser',
       password: 'short',
       organizationName: 'Test Co',
     }).success).toBe(false);
   });
 
-  it('normalises email casing and whitespace', () => {
-    const result = loginSchema.parse({ email: '  Test@Example.COM ', password: 'anything' });
-    expect(result.email).toBe('test@example.com');
+  it('normalises username casing and whitespace', () => {
+    const result = loginSchema.parse({ username: '  Test.User ', password: 'anything' });
+    expect(result.username).toBe('test.user');
+  });
+
+  it('rejects a username containing an @ or spaces', () => {
+    expect(loginSchema.safeParse({ username: 'test@example.com', password: 'anything' }).success).toBe(false);
+    expect(loginSchema.safeParse({ username: 'test user', password: 'anything' }).success).toBe(false);
   });
 });
 

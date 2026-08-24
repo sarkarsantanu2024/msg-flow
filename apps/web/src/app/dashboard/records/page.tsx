@@ -4,6 +4,7 @@ import { prisma } from '@msgflow/db';
 import type { Prisma } from '@msgflow/db';
 import { DEFAULT_PAGE_SIZE } from '@msgflow/config';
 import { requireTenant } from '@/lib/auth';
+import { recordDemoFilter } from '@/lib/demo';
 import { PageHeader, StatTile } from '@/components/dashboard/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/states';
@@ -26,7 +27,10 @@ export default async function RecordsPage({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1));
 
-  const where: Prisma.ExtractedRecordWhereInput = { tenantId: context.tenantId };
+  const where: Prisma.ExtractedRecordWhereInput = {
+    tenantId: context.tenantId,
+    ...recordDemoFilter(context.demoMode),
+  };
   if (params.search) where.naturalKey = { contains: params.search, mode: 'insensitive' };
   if (params.status) where.status = params.status as Prisma.ExtractedRecordWhereInput['status'];
   if (params.schemaId) where.schemaId = params.schemaId;

@@ -4,6 +4,7 @@ import { prisma } from '@msgflow/db';
 import type { Prisma } from '@msgflow/db';
 import { DEFAULT_PAGE_SIZE } from '@msgflow/config';
 import { requireTenant } from '@/lib/auth';
+import { groupDemoFilter, messageDemoFilter } from '@/lib/demo';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/states';
@@ -26,7 +27,10 @@ export default async function MessagesPage({
   const page = Math.max(1, Number(params.page ?? 1));
   const pageSize = DEFAULT_PAGE_SIZE;
 
-  const where: Prisma.MessageWhereInput = { tenantId: context.tenantId };
+  const where: Prisma.MessageWhereInput = {
+    tenantId: context.tenantId,
+    ...messageDemoFilter(context.demoMode),
+  };
 
   if (params.search) {
     where.OR = [
@@ -63,7 +67,7 @@ export default async function MessagesPage({
     }),
     prisma.message.count({ where }),
     prisma.whatsAppGroup.findMany({
-      where: { tenantId: context.tenantId },
+      where: { tenantId: context.tenantId, ...groupDemoFilter(context.demoMode) },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),

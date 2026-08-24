@@ -40,7 +40,7 @@ function slugify(value: string): string {
 export async function signupAction(formData: FormData): Promise<ActionResult> {
   const parsed = signupSchema.safeParse({
     name: formData.get("name"),
-    email: formData.get("email"),
+    username: formData.get("username"),
     password: formData.get("password"),
     organizationName: formData.get("organizationName"),
     timezone: formData.get("timezone") || "Asia/Kolkata",
@@ -54,15 +54,15 @@ export async function signupAction(formData: FormData): Promise<ActionResult> {
     };
   }
 
-  const { name, email, password, organizationName, timezone } = parsed.data;
+  const { name, username, password, organizationName, timezone } = parsed.data;
 
   try {
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({ where: { username } });
     if (existing) {
       return {
         ok: false,
-        message: "An account with that email already exists.",
-        fields: { email: "Already registered" },
+        message: "That username is already taken.",
+        fields: { username: "Already taken" },
       };
     }
 
@@ -83,10 +83,9 @@ export async function signupAction(formData: FormData): Promise<ActionResult> {
         const user = await tx.user.create({
           data: {
             name,
-            email,
+            username,
             passwordHash,
             isSuperAdmin: isFirstUser,
-            emailVerifiedAt: new Date(),
           },
         });
 
@@ -120,7 +119,7 @@ export async function signupAction(formData: FormData): Promise<ActionResult> {
       action: "user.signup",
       entityType: "User",
       entityId: userId,
-      after: { email, organizationName },
+      after: { username, organizationName },
     });
 
     return { ok: true, message: "Account created. Signing you in…" };

@@ -40,7 +40,9 @@ export function SignupForm() {
     formData.set('timezone', timezone);
 
     const password = String(formData.get('password') ?? '');
-    const email = String(formData.get('email') ?? '');
+    // Lower-cased to match the normalisation the schema applies server-side,
+    // otherwise "Santanu" signs up fine and then fails to sign in.
+    const username = String(formData.get('username') ?? '').trim().toLowerCase();
 
     const result = await signupAction(formData);
 
@@ -53,7 +55,7 @@ export function SignupForm() {
 
     // Sign straight in — making someone type the password they just chose is
     // friction with no security benefit.
-    const signInResult = await signIn('credentials', { email, password, redirect: false });
+    const signInResult = await signIn('credentials', { username, password, redirect: false });
     if (!signInResult || signInResult.error) {
       router.push('/login?registered=1');
       return;
@@ -95,18 +97,26 @@ export function SignupForm() {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="username">Username</Label>
         <Input
-          id="email"
-          name="email"
-          type="email"
+          id="username"
+          name="username"
+          type="text"
           autoComplete="username"
           required
-          placeholder="you@company.com"
+          minLength={3}
+          maxLength={30}
+          placeholder="santanu"
           disabled={loading}
-          aria-invalid={Boolean(fields.email)}
+          aria-invalid={Boolean(fields.username)}
         />
-        {fields.email ? <p className="text-xs text-destructive">{fields.email}</p> : null}
+        {fields.username ? (
+          <p className="text-xs text-destructive">{fields.username}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            This is what you sign in with. Letters, numbers, dots, underscores or hyphens.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">

@@ -44,7 +44,7 @@ export default async function NewAutomationPage() {
 
       <PageHeader
         title="New automation"
-        description="Describe what you want in plain English, or configure every field yourself. Nothing runs until you activate it."
+        description="Three steps: where the messages come from, what to capture, and when it runs. Nothing runs until you activate it."
       />
 
       <AutomationBuilder

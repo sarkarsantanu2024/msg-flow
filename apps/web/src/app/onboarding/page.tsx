@@ -22,7 +22,7 @@ export default async function OnboardingPage() {
         <Wordmark showTagline className="mb-8" />
         <h1 className="text-2xl font-semibold tracking-tight">Create a workspace</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          You are signed in as {context.email}, but you do not belong to a workspace yet.
+          You are signed in as {context.username}, but you do not belong to a workspace yet.
         </p>
         <OnboardingForm />
       </div>

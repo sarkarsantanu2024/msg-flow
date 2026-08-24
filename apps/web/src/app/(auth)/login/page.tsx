@@ -15,7 +15,7 @@ export default async function LoginPage({
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Enter the email and password you created your account with.
+        Enter the username and password you created your account with.
       </p>
 
       {params.registered ? (

@@ -1,6 +1,9 @@
 import { getEnv } from '@msgflow/config';
 import { safeCompare } from '@msgflow/db';
 import { AppError } from '@msgflow/types';
+import { createLogger, describeError } from '@msgflow/logger';
+
+const log = createLogger('worker-client');
 
 /**
  * Shared-secret authentication for the worker → web direction.
@@ -57,9 +60,17 @@ export async function callWorker(
     if ((err as Error).name === 'AbortError') {
       throw new AppError('WORKER_UNAVAILABLE', 'The WhatsApp worker did not respond in time.');
     }
+    // The operator detail — which URL, which errno, which command to run — is a
+    // deployment fact, not something the person using the product can act on.
+    // It belongs in the server log; they get told what it means for them.
+    log.error('Worker unreachable', {
+      url: env.WHATSAPP_WORKER_URL,
+      path,
+      ...describeError(err),
+    });
     throw new AppError(
       'WORKER_UNAVAILABLE',
-      'The WhatsApp worker is not reachable. Start it with `pnpm worker:dev` and check WHATSAPP_WORKER_URL.',
+      'WhatsApp is temporarily unavailable. Please try again in a moment.',
     );
   } finally {
     clearTimeout(timeout);

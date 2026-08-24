@@ -9,6 +9,7 @@ export type AuditAction =
   | 'tenant.updated'
   | 'tenant.suspended'
   | 'tenant.activated'
+  | 'tenant.demo_mode_changed'
   | 'member.invited'
   | 'member.role_changed'
   | 'member.removed'

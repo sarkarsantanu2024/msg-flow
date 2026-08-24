@@ -95,6 +95,7 @@ Each is documented in the code and README; none is a surprise.
 | **No outbound email** | `app/(auth)/actions.ts` | Password reset returns the link in the UI in development, clearly labelled. Production needs a mail transport. |
 | **Payment processing not wired** | `/dashboard/billing` | Plans, limits and usage are tracked and enforced; no provider connected. |
 | **Google Sheets needs credentials** | `packages/connectors/src/sheets.ts` | Fully implemented; runs in mock mode without keys and says so in the UI. |
+| **Voice notes are captured but never transcribed** | `apps/worker/src/providers/whatsapp-web.ts` | A WhatsApp voice note (`ptt`) is correctly typed `AUDIO` with `hasMedia: true`, but the media is never downloaded and there is **no speech-to-text anywhere**. `text` stays empty, so a voice note produces no record at all. Building it needs: download media in the worker → transcribe → write the transcript into `message.text`, after which the existing classify/extract pipeline works unchanged. **Unlike text extraction there is no mock fallback** — the rule-based provider reads text, not audio, so this cannot be demonstrated without a paid key (Whisper or Gemini; Anthropic has no audio input). Hindi/Bengali support was asked for on 2026-08-24 and deliberately deferred. **Do not promise voice to a client as if it works.** |
 
 ---
 
@@ -160,6 +161,34 @@ Each is documented in the code and README; none is a surprise.
   node-linker.
 - `pnpm-workspace.yaml` `allowBuilds` must keep Prisma's entries `true`, or the client cannot
   generate.
+
+---
+
+## Showing MsgFlow to a client
+
+```bash
+pnpm demo:seed --reset     # rebuild the demo workspace from scratch
+```
+
+Sign in as **`sunrise` / `sunrise-demo-2026`** — the "Sunrise Trading Co." workspace. It holds 3
+monitored groups, 37 messages of realistic Indian SMB traffic across 7 days, 26 extracted records,
+and a generated `Sales Register 2026.xlsx`.
+
+Two things make it safe to put in front of someone:
+
+- It is a **separate tenant**, so the connected personal WhatsApp groups are nowhere near it.
+- The records are **not fabricated**. The script inserts messages and then calls the real
+  `runAutomation`, so the output comes from the same code path that processes live traffic. If the
+  pipeline breaks, the demo breaks — which is the point.
+
+The dashboard has a **Demo data** switch (Owner/Admin only) that hides every demo row across
+Dashboard, Messages, Groups and Extracted Data. It writes to `tenant.settings.demoMode` rather than
+a cookie, so a laptop and a projector cannot disagree. Turning it off is the strongest moment in the
+demo: the workspace empties, and that is what the client's own day one looks like.
+
+Demo rows are marked `ingestSource: DEMO` (connection `provider: DEMO`); the filters in
+`apps/web/src/lib/demo.ts` are **exclusions**, so a bug there hides real data rather than inventing
+demo data. Dates regenerate from today on every reseed, so the workspace never looks stale.
 
 ---
 

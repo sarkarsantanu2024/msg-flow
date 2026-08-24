@@ -32,8 +32,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           tenantName={context.tenantName}
           tenantSlug={context.tenantSlug}
           role={context.role}
-          userName={context.name ?? context.email}
-          userEmail={context.email}
+          userName={context.name ?? context.username}
+          userEmail={context.email ?? context.username}
           memberships={context.memberships.map((m) => ({
             tenantId: m.tenantId,
             tenantName: m.tenantName,
