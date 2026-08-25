@@ -68,9 +68,12 @@ export async function callWorker(
       path,
       ...describeError(err),
     });
+    // Deliberately not "try again in a moment": an unreachable worker is
+    // usually a misconfigured or stopped service, not a blip, and telling
+    // someone to retry something that will never succeed wastes their time.
     throw new AppError(
       'WORKER_UNAVAILABLE',
-      'WhatsApp is temporarily unavailable. Please try again in a moment.',
+      'The WhatsApp service is not responding. If this keeps happening, ask your administrator to check it.',
     );
   } finally {
     clearTimeout(timeout);
