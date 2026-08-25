@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createLogger, describeError } from '@msgflow/logger';
 import { config } from './config.js';
@@ -21,12 +22,29 @@ const VERSION = '1.0.0';
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
-/** Shared-secret auth. The worker's control API is not publicly reachable. */
+/**
+ * Shared-secret auth for the control API.
+ *
+ * This used to assume the worker was only reachable on a private network. It is
+ * not: a hosted web app has to reach it over the internet, whether through a
+ * tunnel or a public deployment. So the comparison is constant time — a
+ * byte-by-byte early exit leaks the secret to anyone who can measure response
+ * timing across enough requests, which is exactly what public exposure allows.
+ * The web app's side of this handshake already compares in constant time.
+ */
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  // timingSafeEqual throws on length mismatch, which would itself be an oracle.
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 function requireSecret(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization ?? '';
   const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
 
-  if (provided !== config.WHATSAPP_WORKER_SECRET) {
+  if (!provided || !safeEqual(provided, config.WHATSAPP_WORKER_SECRET)) {
     res.status(401).json({ error: 'Invalid worker credentials.' });
     return;
   }
