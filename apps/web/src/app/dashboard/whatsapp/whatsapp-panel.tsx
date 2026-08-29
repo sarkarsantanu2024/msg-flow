@@ -104,12 +104,18 @@ export function WhatsAppPanel({
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error?.message ?? `${label} failed.`);
 
-      toast.success(`${label} requested`, {
-        description:
-          action === 'connect' || action === 'reconnect'
-            ? 'Scan the QR code when it appears below.'
-            : undefined,
-      });
+      // A teardown that only took effect on our side is not a success story.
+      const warning = body?.data?.warning as string | undefined;
+      if (warning) {
+        toast.warning(`${label} applied locally`, { description: warning });
+      } else {
+        toast.success(`${label} requested`, {
+          description:
+            action === 'connect' || action === 'reconnect'
+              ? 'Scan the QR code when it appears below.'
+              : undefined,
+        });
+      }
       await refresh();
       router.refresh();
     } catch (err) {
