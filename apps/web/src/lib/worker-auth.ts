@@ -1,4 +1,4 @@
-import { getEnv } from '@msgflow/config';
+import { checkWorkerConfig, getEnv } from '@msgflow/config';
 import { safeCompare } from '@msgflow/db';
 import { AppError } from '@msgflow/types';
 import { createLogger, describeError } from '@msgflow/logger';
@@ -29,6 +29,20 @@ export async function callWorker(
   init: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<unknown> {
   const env = getEnv();
+
+  // A misconfigured URL cannot succeed, so don't spend a timeout discovering
+  // that. The operator gets the specific mistake in the log; the person at the
+  // screen gets told this is a setup problem, not something they can retry.
+  const config = checkWorkerConfig(env);
+  if (!config.ok) {
+    log.error('Worker is misconfigured', { path, reason: config.reason });
+    throw new AppError(
+      'WORKER_UNAVAILABLE',
+      'The WhatsApp service is not set up on this server. This is a configuration problem — ' +
+        'ask your administrator to check the WhatsApp worker settings.',
+    );
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), init.timeoutMs ?? 15_000);
 

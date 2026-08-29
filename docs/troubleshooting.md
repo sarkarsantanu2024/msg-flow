@@ -32,6 +32,16 @@ confirms the worker itself is alive.
 `WHATSAPP_WORKER_URL` is wrong, or the worker is down. In Docker, the app reaches the worker at the
 service name, not `localhost`.
 
+**"The WhatsApp service is not responding" — every button fails on the deployed app**
+`WHATSAPP_WORKER_URL` is still `http://localhost:4000` in the hosting environment. On Vercel,
+`localhost` is the serverless function itself, so there is no worker there at any port and nothing
+will ever connect. The worker cannot run on Vercel at all — it drives a headless Chromium. Deploy it
+to Railway/Render/Fly/a VPS and set `WHATSAPP_WORKER_URL` to that public URL, with the same
+`WHATSAPP_WORKER_SECRET` on both sides. See [deployment.md](deployment.md#3-worker).
+`curl https://your-app.vercel.app/api/health` reports `WORKER: DOWN` while this is unfixed.
+**Disconnect** and **Logout** still work in this state — they clear MsgFlow's side and say so —
+but they cannot stop a session the worker may still be holding.
+
 **QR never appears**
 Chromium failed to start. Check the worker logs. On Linux you usually need the system package plus
 `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`. In Docker, set `--shm-size=1gb` — the 64 MB default

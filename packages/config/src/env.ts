@@ -32,7 +32,10 @@ const serverSchema = z.object({
   GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
 
-  WHATSAPP_WORKER_URL: z.string().default("http://localhost:4000"),
+  WHATSAPP_WORKER_URL: z
+    .string()
+    .url("WHATSAPP_WORKER_URL must be a full URL, e.g. https://worker.example.com")
+    .default("http://localhost:4000"),
   WHATSAPP_WORKER_SECRET: z
     .string()
     .min(1, "WHATSAPP_WORKER_SECRET is required"),
@@ -43,6 +46,11 @@ const serverSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
 
   WEBHOOK_SECRET: optionalString,
+
+  // Set this on Vercel to use Vercel Cron: the platform then sends it as
+  // `Authorization: Bearer $CRON_SECRET` on every scheduled invocation.
+  // Unset, the scheduler tick accepts WHATSAPP_WORKER_SECRET instead.
+  CRON_SECRET: optionalString,
 
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   STORAGE_LOCAL_PATH: z.string().default("./storage"),
@@ -113,4 +121,66 @@ export function isAiProviderConfigured(
 
 export function isGoogleConfigured(env = getEnv()): boolean {
   return env.GOOGLE_CLIENT_ID.length > 0 && env.GOOGLE_CLIENT_SECRET.length > 0;
+}
+
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    hostname.startsWith("127.")
+  );
+}
+
+export type WorkerConfigCheck = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Catches the one deployment mistake that makes every WhatsApp button fail:
+ * a hosted web app still pointing WHATSAPP_WORKER_URL at localhost. There, the
+ * loopback address is the web server itself, so no worker exists at any port
+ * and no amount of retrying will ever find one.
+ *
+ * This is a *check*, not a throw. Refusing to boot would take the whole product
+ * down over one subsystem — everything except WhatsApp works fine without a
+ * worker. Callers surface it: the health endpoint reports it, and the worker
+ * client refuses the call up front instead of burning a 15-second timeout.
+ */
+export function checkWorkerConfig(env = getEnv()): WorkerConfigCheck {
+  let worker: URL;
+  let app: URL;
+  try {
+    worker = new URL(env.WHATSAPP_WORKER_URL);
+    app = new URL(env.APP_URL);
+  } catch {
+    return {
+      ok: false,
+      reason: `WHATSAPP_WORKER_URL ("${env.WHATSAPP_WORKER_URL}") is not a valid URL.`,
+    };
+  }
+
+  // "worker.example.com:4000" parses cleanly — as a URL whose *scheme* is
+  // "worker.example.com:" and whose host is empty. It looks right to a human
+  // and to zod's .url(), and fails only at fetch time. Demand the scheme
+  // explicitly so a missing http:// is caught here instead of in production.
+  if (worker.protocol !== 'http:' && worker.protocol !== 'https:') {
+    return {
+      ok: false,
+      reason:
+        `WHATSAPP_WORKER_URL ("${env.WHATSAPP_WORKER_URL}") is not a valid URL — ` +
+        `it needs an http:// or https:// prefix.`,
+    };
+  }
+
+  if (isLoopback(worker.hostname) && !isLoopback(app.hostname)) {
+    return {
+      ok: false,
+      reason:
+        `WHATSAPP_WORKER_URL points at ${worker.origin}, but this app is hosted at ${app.origin}. ` +
+        `On a hosted server, localhost is the server itself — the WhatsApp worker is not there. ` +
+        `Deploy the worker (it needs a real machine; it drives a headless browser) and set ` +
+        `WHATSAPP_WORKER_URL to its public HTTPS URL. See docs/deployment.md.`,
+    };
+  }
+
+  return { ok: true };
 }

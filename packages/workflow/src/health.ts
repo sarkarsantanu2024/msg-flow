@@ -1,5 +1,5 @@
 import { getProviderStatus } from '@msgflow/ai';
-import { WORKER_STALE_MS } from '@msgflow/config';
+import { WORKER_STALE_MS, checkWorkerConfig } from '@msgflow/config';
 import { checkDatabase, prisma } from '@msgflow/db';
 import type { HealthLayerStatus, SystemHealth } from '@msgflow/types';
 
@@ -55,16 +55,22 @@ export async function getSystemHealth(tenantId?: string): Promise<SystemHealth> 
   const liveWorkers = workers.filter(
     (w) => w.lastHeartbeatAt && now - w.lastHeartbeatAt.getTime() < WORKER_STALE_MS,
   );
+  // A missing heartbeat has two very different causes: a worker that stopped,
+  // and a worker that was never deployed at all. Naming the second one here is
+  // the difference between an admin fixing it in a minute and a support ticket.
+  const workerConfig = checkWorkerConfig();
   layers.push({
     layer: 'WORKER',
     label: 'Worker',
-    state: liveWorkers.length > 0 ? 'HEALTHY' : workers.length > 0 ? 'DOWN' : 'UNKNOWN',
+    state: liveWorkers.length > 0 ? 'HEALTHY' : workerConfig.ok && workers.length === 0 ? 'UNKNOWN' : 'DOWN',
     message:
       liveWorkers.length > 0
         ? `${liveWorkers.length} worker(s) online`
-        : workers.length > 0
-          ? 'No heartbeat received recently — the worker process may have stopped'
-          : 'The WhatsApp service has not come online yet',
+        : !workerConfig.ok
+          ? workerConfig.reason
+          : workers.length > 0
+            ? 'No heartbeat received recently — the worker process may have stopped'
+            : 'The WhatsApp service has not come online yet',
   });
 
   // --- WhatsApp ---
