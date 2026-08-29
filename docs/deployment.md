@@ -62,7 +62,11 @@ the worker:
 { "crons": [{ "path": "/api/cron/tick", "schedule": "*/5 * * * *" }] }
 ```
 
-Then set `SCHEDULER_ENABLED=false` on the worker so the schedule is not driven twice.
+Then set `SCHEDULER_ENABLED=false` on the worker so the schedule is not driven twice, and set
+`CRON_SECRET` in the Vercel project — Vercel sends it as `Authorization: Bearer $CRON_SECRET` on
+every scheduled call. The tick always requires a bearer secret (`CRON_SECRET` or
+`WHATSAPP_WORKER_SECRET`); it never trusts a request header alone, because anyone can set one and
+a tick spends AI credits and writes to customer spreadsheets.
 
 **Storage note.** The default local storage driver writes to the filesystem, which is ephemeral on
 Vercel. Generated Excel files will not survive between invocations. For production either run the

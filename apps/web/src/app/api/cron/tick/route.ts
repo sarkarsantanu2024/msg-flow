@@ -23,10 +23,15 @@ async function tick(request: Request) {
   const header = request.headers.get('authorization') ?? '';
   const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
 
-  // Vercel Cron sends its own header; accept either credential.
-  const isVercelCron = request.headers.get('x-vercel-cron') !== null;
-
-  if (!isVercelCron && (!provided || !safeCompare(provided, env.WHATSAPP_WORKER_SECRET))) {
+  // A bearer secret, always. An earlier version also accepted the presence of
+  // an `x-vercel-cron` header as proof of identity, but a request header is
+  // supplied by whoever makes the request: anyone could set it and drive every
+  // due automation — spending AI credits, writing to customer spreadsheets and
+  // firing webhooks — with a single unauthenticated call. Vercel Cron sends
+  // `Authorization: Bearer $CRON_SECRET` whenever CRON_SECRET is set, so the
+  // supported path costs nothing and is actually authenticated.
+  const accepted = [env.CRON_SECRET, env.WHATSAPP_WORKER_SECRET].filter((s) => s.length > 0);
+  if (!provided || !accepted.some((secret) => safeCompare(provided, secret))) {
     throw new AppError('UNAUTHENTICATED', 'Invalid scheduler credentials.');
   }
 

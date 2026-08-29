@@ -60,6 +60,10 @@ export const POST = route(async (request: Request) => {
   const groupByExternalId = new Map(groups.map((g) => [g.externalId, g]));
 
   const storedIds: string[] = [];
+  // Per-group tallies of what was *actually* written. Counting the payload
+  // instead would inflate every count on a redelivered batch — and duplicate
+  // redelivery is normal, which is why the unique constraints exist.
+  const storedPerGroup = new Map<string, { count: number; latest: number }>();
 
   for (const message of payload.messages) {
     let group = groupByExternalId.get(message.groupExternalId);
@@ -129,6 +133,11 @@ export const POST = route(async (request: Request) => {
 
       result.stored++;
       storedIds.push(created.id);
+
+      const tally = storedPerGroup.get(group.id) ?? { count: 0, latest: 0 };
+      tally.count++;
+      tally.latest = Math.max(tally.latest, message.timestamp);
+      storedPerGroup.set(group.id, tally);
     } catch (err) {
       // P2002 = unique violation = we already have this message. Expected.
       if ((err as { code?: string }).code === 'P2002') {
@@ -141,22 +150,21 @@ export const POST = route(async (request: Request) => {
   }
 
   if (result.stored > 0) {
-    const latest = payload.messages.reduce((max, m) => Math.max(max, m.timestamp), 0);
+    // Each group is stamped with its own newest stored message. Using the
+    // batch-wide maximum would date a quiet group by another group's traffic.
+    const latest = Math.max(...[...storedPerGroup.values()].map((t) => t.latest));
 
     await Promise.all([
       prisma.whatsAppConnection.update({
         where: { id: connection.id },
         data: { lastMessageAt: new Date(latest) },
       }),
-      ...[...new Set(payload.messages.map((m) => m.groupExternalId))].map((externalId) => {
-        const group = groupByExternalId.get(externalId);
-        if (!group) return Promise.resolve(null);
-        const count = payload.messages.filter((m) => m.groupExternalId === externalId).length;
-        return prisma.whatsAppGroup.update({
-          where: { id: group.id },
-          data: { messageCount: { increment: count }, lastMessageAt: new Date(latest) },
-        });
-      }),
+      ...[...storedPerGroup.entries()].map(([groupId, tally]) =>
+        prisma.whatsAppGroup.update({
+          where: { id: groupId },
+          data: { messageCount: { increment: tally.count }, lastMessageAt: new Date(tally.latest) },
+        }),
+      ),
     ]);
 
     const tenant = await prisma.tenant.findUnique({
